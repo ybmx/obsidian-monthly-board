@@ -27,7 +27,7 @@ function createMonthlyBoardRenderer() {
 
 const DEFAULT_CONFIG = {
   stateKey: 'obsidian-monthly-journal-board:v1',
-  version: 'v2026-05-25 00:35 stable-cover-grid-hide',
+  version: 'v2026-05-25 01:32 dynamic-frame-zoom',
   monthsCn: ['一月','二月','三月','四月','五月','六月','七月','八月','九月','十月','十一月','十二月'],
   monthsEn: ['January','February','March','April','May','June','July','August','September','October','November','December'],
   weekdays: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
@@ -75,6 +75,11 @@ async function renderMonthlyBoard(ctx = {}) {
   const app = ctx.app || (typeof window !== 'undefined' ? window.app : null);
   if (!dv || !app) throw new Error('MonthlyBoard requires { dv, app }.');
   const ROOT = ctx.container || dv.container;
+  ROOT.classList?.add('monthly-journal-board');
+  ROOT.style.width = '100%';
+  ROOT.style.maxWidth = 'none';
+  const previewSection = ROOT.closest?.('.markdown-preview-section');
+  if (previewSection) previewSection.style.maxWidth = 'none';
   const config = mergeDeep(DEFAULT_CONFIG, ctx.config || {});
   const STATE_KEY = config.stateKey;
   const BOARD_VERSION = config.version || DEFAULT_CONFIG.version;
@@ -440,10 +445,17 @@ function setGridHidden(item, hidden) {
 }
 function clampZoom(value) {
   const zoom = Number(value);
-  return Math.max(0.65, Math.min(1.8, Number.isFinite(zoom) ? zoom : 1));
+  return Math.max(0.65, Math.min(2.4, Number.isFinite(zoom) ? zoom : 1));
 }
 function zoomLabel() {
   return `${Math.round(clampZoom(state.zoom) * 100)}%`;
+}
+function obsidianUiScale() {
+  if (typeof document === 'undefined') return 1;
+  const styles = getComputedStyle(document.body || document.documentElement);
+  const raw = styles.getPropertyValue('--font-ui-medium') || styles.getPropertyValue('--font-text-size') || styles.fontSize || '15px';
+  const px = Number.parseFloat(raw);
+  return Math.max(0.75, Math.min(1.35, Number.isFinite(px) ? px / 15 : 1));
 }
 function touchDistance(touches) {
   if (!touches || touches.length < 2) return 0;
@@ -452,16 +464,28 @@ function touchDistance(touches) {
   return Math.sqrt(dx * dx + dy * dy);
 }
 function applyBoardZoom(canvas, label, frame) {
-  const zoom = clampZoom(state.zoom);
+  const boardZoom = clampZoom(state.zoom);
+  const uiScale = obsidianUiScale();
+  const zoom = boardZoom * uiScale;
   if (canvas) {
-    canvas.style.zoom = '';
-    canvas.style.transform = `scale(${zoom})`;
-    canvas.style.transformOrigin = 'top left';
-    canvas.style.width = '100%';
+    const viewport = frame?.parentElement || canvas.parentElement;
+    const viewportWidth = Math.max(1, Math.floor(viewport?.clientWidth || canvas.offsetWidth || 1));
     if (frame) {
-      const rect = canvas.getBoundingClientRect();
-      const baseWidth = canvas.offsetWidth || rect.width / zoom || 1;
-      const baseHeight = canvas.offsetHeight || rect.height / zoom || 1;
+      frame.style.width = '';
+      frame.style.height = '';
+    }
+    canvas.style.zoom = '';
+    canvas.style.transform = 'none';
+    canvas.style.transformOrigin = 'top left';
+    const baseWidth = Math.max(1, Math.floor(viewportWidth / uiScale));
+    canvas.style.width = `${baseWidth}px`;
+    canvas.style.height = '';
+    canvas.style.maxWidth = 'none';
+    const root = canvas.firstElementChild;
+    const baseHeight = Math.max(1, Math.ceil(root?.scrollHeight || canvas.scrollHeight || canvas.offsetHeight || 1));
+    canvas.style.height = `${baseHeight}px`;
+    canvas.style.transform = `scale(${zoom})`;
+    if (frame) {
       frame.style.width = `${Math.ceil(baseWidth * zoom)}px`;
       frame.style.height = `${Math.ceil(baseHeight * zoom)}px`;
     }
@@ -493,8 +517,26 @@ function installZoomGestures(viewport, canvas, label, frame) {
     if (!ev.ctrlKey) return;
     ev.preventDefault();
     const factor = ev.deltaY > 0 ? 0.92 : 1.08;
-    setBoardZoom(clampZoom(state.zoom) * factor, canvas, label);
+    setBoardZoom(clampZoom(state.zoom) * factor, canvas, label, frame);
   }, { passive: false });
+}
+function installZoomResize(viewport, canvas, label, frame) {
+  let raf = 0;
+  let observer = null;
+  const refresh = () => {
+    if (!viewport.isConnected) {
+      observer?.disconnect();
+      window.removeEventListener('resize', refresh);
+      return;
+    }
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(() => applyBoardZoom(canvas, label, frame));
+  };
+  if (typeof ResizeObserver !== 'undefined') {
+    observer = new ResizeObserver(refresh);
+    observer.observe(viewport);
+  }
+  window.addEventListener('resize', refresh, { passive: true });
 }
 function relatedLabel(source, title) {
   return source ? `${source} · ${title}` : title;
@@ -567,9 +609,12 @@ ${handFontFace}.monthly-journal-board .markdown-preview-section { max-width: 100
   --mjb-line: rgba(83, 125, 91, .28);
   position: relative;
   container: mjb-board / inline-size;
+  width: 100%;
+  box-sizing: border-box;
   min-height: 760px;
   padding: 24px;
   border-radius: 28px;
+  font-size: var(--font-ui-medium, 15px);
   color: var(--mjb-ink);
   overflow: hidden;
   background: #f7f1e5;
@@ -599,10 +644,13 @@ ${handFontFace}.monthly-journal-board .markdown-preview-section { max-width: 100
 .mjb-root[data-theme="custom"] .mjb-weekdays { color: rgba(247,251,255,.88); text-shadow: 0 2px 7px rgba(0,0,0,.72), 0 0 1px rgba(0,0,0,.9); }
 .mjb-root[data-theme="custom"] .mjb-month-tab { color: rgba(247,251,255,.88); background: rgba(15,27,43,.28); text-shadow: 0 1px 4px rgba(0,0,0,.45); }
 .mjb-root[data-theme="custom"] .mjb-month-tab.is-active { color: #19324a; background: rgba(238,247,255,.92); text-shadow: none; }
-.mjb-zoom-viewport { width: 100%; overflow: auto; touch-action: pan-x pan-y; overscroll-behavior: contain; }
-.mjb-zoom-canvas { transform-origin: top left; width: 100%; will-change: transform; }
-.mjb-zoom-controls { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--mjb-line); border-radius: 999px; padding: 2px; background: rgba(255,255,255,.28); backdrop-filter: blur(10px); }
-.mjb-zoom-controls button { min-width: 30px; padding: 5px 8px; }
+.mjb-zoom-viewport { width: 100%; overflow: auto; touch-action: pan-x pan-y; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.mjb-zoom-toolbar { position: sticky; top: 0; left: 0; z-index: 30; display: flex; justify-content: flex-end; width: 100%; box-sizing: border-box; padding: 0 0 8px; pointer-events: none; }
+.mjb-zoom-toolbar .mjb-zoom-controls { pointer-events: auto; }
+.mjb-zoom-frame { position: relative; }
+.mjb-zoom-canvas { transform-origin: top left; width: 100%; max-width: none; will-change: transform; }
+.mjb-zoom-controls { display: inline-flex; align-items: center; gap: 4px; border: 1px solid rgba(83, 125, 91, .28); border-radius: 999px; padding: 2px; background: rgba(255,255,255,.52); backdrop-filter: blur(10px); box-shadow: 0 8px 22px rgba(54,62,48,.12); }
+.mjb-zoom-controls button { min-width: 30px; border: 1px solid rgba(83, 125, 91, .28); background: rgba(255,255,255,.50); color: #213729; border-radius: 999px; padding: 5px 8px; font-size: 12px; cursor: pointer; font-weight: 800; }
 .mjb-zoom-reset { min-width: 48px !important; }
 .mjb-root::before { content: ''; position: absolute; inset: 0; pointer-events: none; background-image: radial-gradient(rgba(255,255,255,.35) 0.7px, transparent 0.7px); background-size: 5px 5px; opacity: .24; }
 .mjb-head, .mjb-main { position: relative; z-index: 1; }
@@ -654,7 +702,7 @@ a.mjb-date:hover { filter: brightness(1.06); transform: translateY(-1px); }
 .mjb-pop a { color: #d9f1ff !important; }
 .mjb-resizer { border-radius: 999px; background: linear-gradient(var(--mjb-line), var(--mjb-accent), var(--mjb-line)); opacity: .45; cursor: col-resize; }
 .mjb-root[data-side-hidden="true"] .mjb-resizer { opacity: 0; pointer-events: none; }
-.mjb-side { min-width: 0; max-height: min(76vh, 720px); position: sticky; top: 12px; display: flex; flex-direction: column; border: 1px solid var(--mjb-line); border-radius: 24px; padding: 16px; background: rgba(255,255,255,.46); backdrop-filter: blur(12px); overflow: hidden; transition: padding .18s ease, border-radius .18s ease, background .18s ease; }
+.mjb-side { min-width: 0; height: min(76vh, 720px); max-height: min(76vh, 720px); box-sizing: border-box; position: sticky; top: 12px; display: flex; flex-direction: column; border: 1px solid var(--mjb-line); border-radius: 24px; padding: 16px; background: rgba(255,255,255,.46); backdrop-filter: blur(12px); overflow: hidden; transition: padding .18s ease, border-radius .18s ease, background .18s ease; }
 .mjb-side.is-collapsed { min-width: 0; width: 48px; align-items: center; padding: 10px 6px; border-radius: 18px; cursor: pointer; }
 .mjb-side-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 10px; }
 .mjb-side h3 { margin: 0; font-family: Georgia, serif; font-size: 28px; }
@@ -674,9 +722,9 @@ a.mjb-date:hover { filter: brightness(1.06); transform: translateY(-1px); }
 .mjb-detail a { color: var(--mjb-ink) !important; }
 .mjb-detail-list { padding-left: 18px; margin-top: 8px; }
 .mjb-detail-list li { margin: 6px 0; line-height: 1.42; }
-.mjb-grid-toggle { border: 1px solid var(--mjb-line); border-radius: 999px; padding: 2px 7px; margin-left: 4px; background: rgba(255,255,255,.42); color: var(--mjb-muted); cursor: pointer; font-size: 10px; font-weight: 800; }
-.mjb-grid-toggle.is-hidden { color: var(--mjb-ink); background: rgba(255,255,255,.70); }
-.mjb-grid-toggle:hover { color: var(--mjb-ink); background: rgba(255,255,255,.76); }
+.mjb-grid-toggle { display: inline-flex; align-items: center; justify-content: center; width: 12px; height: 12px; margin-left: 3px; color: var(--mjb-muted); cursor: pointer; font: 900 10px/1 Georgia, serif; opacity: .34; vertical-align: .08em; user-select: none; }
+.mjb-grid-toggle.is-hidden { color: var(--mjb-accent-2); opacity: .78; }
+.mjb-grid-toggle:hover { color: var(--mjb-ink); opacity: .9; }
 .mjb-detail-image { display: block; width: 100%; max-height: 220px; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 18px; margin: 12px 0 14px; border: 1px solid var(--mjb-line); box-shadow: 0 10px 28px rgba(0,0,0,.12); opacity: 1; filter: none !important; mix-blend-mode: normal; }
 .mjb-root[data-theme="night"] .mjb-detail-image { box-shadow: 0 10px 28px rgba(18,30,46,.18); }
 .mjb-photo-toggle { display: inline-flex; margin: -4px 0 10px; border: 1px solid var(--mjb-line); border-radius: 999px; padding: 5px 10px; background: rgba(255,255,255,.56); color: var(--mjb-ink); cursor: pointer; font-size: 11px; font-weight: 800; }
@@ -689,13 +737,13 @@ a.mjb-date:hover { filter: brightness(1.06); transform: translateY(-1px); }
 .mjb-focus-panel { display: grid; gap: 7px; margin: 8px 0 12px; padding: 10px; border: 1px solid var(--mjb-line); border-radius: 16px; background: rgba(255,255,255,.36); }
 .mjb-focus-panel label { display: grid; grid-template-columns: 32px 1fr; gap: 8px; align-items: center; font-size: 11px; color: var(--mjb-muted); font-weight: 800; }
 .mjb-focus-panel input[type="range"] { width: 100%; accent-color: var(--mjb-accent); }
-.mjb-open-note { display: inline-flex; align-items: center; gap: 5px; padding: 6px 10px; border: 0; border-radius: 999px; background: var(--mjb-accent); color: #fff !important; text-decoration: none !important; font-size: 12px; font-weight: 800; cursor: pointer; }
-.mjb-open-note:hover { filter: brightness(1.04); transform: translateY(-1px); }
+.mjb-open-note { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; margin-left: 6px; color: var(--mjb-muted) !important; text-decoration: none !important; font: 900 12px/1 Georgia, serif; opacity: .42; vertical-align: .08em; cursor: pointer; }
+.mjb-open-note:hover { color: var(--mjb-ink) !important; opacity: .9; }
 .mjb-open-message { margin: 8px 0 0; padding: 8px 10px; border-radius: 12px; background: rgba(255,255,255,.38); color: var(--mjb-muted); font-size: 12px; white-space: pre-wrap; }
 .mjb-open-message.is-error { color: #8a2f2f; background: rgba(255, 228, 228, .72); }
 @container mjb-board (max-width: 720px) {
   .mjb-main { grid-template-columns: minmax(0, 1fr) 6px clamp(132px, 27%, 180px); gap: 8px; }
-  .mjb-side { padding: 10px; border-radius: 18px; max-height: 70vh; }
+  .mjb-side { height: min(70vh, 560px); max-height: min(70vh, 560px); padding: 10px; border-radius: 18px; }
   .mjb-side h3 { font-size: 20px; }
   .mjb-side-toggle { padding: 4px 7px; }
   .mjb-note-area { min-height: 64px; max-height: 96px; padding: 9px; font-size: 11px; margin-bottom: 10px; }
@@ -712,9 +760,9 @@ a.mjb-date:hover { filter: brightness(1.06); transform: translateY(-1px); }
   .mjb-detail { font-size: 11px; }
   .mjb-detail-image { max-height: 96px; }
   .mjb-photo-tools { display: none; }
-  .mjb-open-note { font-size: 11px; padding: 5px 8px; }
+  .mjb-open-note { width: 15px; height: 15px; margin-left: 5px; font-size: 11px; }
 }
-@media (max-width: 920px) { .mjb-main, .mjb-root[data-side-hidden="true"] .mjb-main { grid-template-columns: 1fr; } .mjb-resizer { display:none; } .mjb-side { position: static; max-height: 68vh; } .mjb-side.is-collapsed { width: auto; min-height: 44px; align-items: stretch; } .mjb-side.is-collapsed .mjb-side-head { writing-mode: horizontal-tb; } .mjb-grid { grid-auto-rows: minmax(100px, auto); } }
+@media (max-width: 920px) { .mjb-main, .mjb-root[data-side-hidden="true"] .mjb-main { grid-template-columns: 1fr; } .mjb-resizer { display:none; } .mjb-side { position: static; height: auto; max-height: none; overflow: visible; } .mjb-detail { overflow: visible; flex: 0 0 auto; max-height: none; } .mjb-side.is-collapsed { width: auto; min-height: 44px; align-items: stretch; } .mjb-side.is-collapsed .mjb-side-head { writing-mode: horizontal-tb; } .mjb-grid { grid-auto-rows: minmax(100px, auto); } }
 `;
   document.head.appendChild(style);
 }
@@ -814,8 +862,9 @@ function renderDetail(side, data, dateStr) {
     return;
   }
   if (day.path) {
-    const open = configureInternalLink(make('a', 'internal-link mjb-open-note', '打开日记 ↗'), day.path);
-    detail.appendChild(open);
+    const open = configureInternalLink(make('a', 'internal-link mjb-open-note', '↗'), day.path);
+    open.title = '打开日记';
+    title.appendChild(open);
   }
   if (day.image) {
     const img = make('img', 'mjb-detail-image');
@@ -892,10 +941,14 @@ function renderDetail(side, data, dateStr) {
   const addGridToggle = (li, item) => {
     const hidden = isGridHidden(item);
     li.appendChild(document.createTextNode(' '));
-    const button = make('button', `mjb-grid-toggle${hidden ? ' is-hidden' : ''}`, hidden ? '放回格子' : '不放格子');
-    button.title = hidden ? '重新显示在日期格子里' : '只在右侧详情里显示，不占日期格子';
-    button.onclick = ev => { ev.preventDefault(); ev.stopPropagation(); setGridHidden(item, !hidden); render(); };
-    li.appendChild(button);
+    const marker = make('span', `mjb-grid-toggle${hidden ? ' is-hidden' : ''}`, hidden ? '⊘' : '○');
+    marker.title = hidden ? '已不放入日期格子，点一下放回' : '点一下仅在右侧显示';
+    marker.setAttribute('role', 'switch');
+    marker.setAttribute('aria-checked', hidden ? 'true' : 'false');
+    marker.tabIndex = 0;
+    marker.onclick = ev => { ev.preventDefault(); ev.stopPropagation(); setGridHidden(item, !hidden); render(); };
+    marker.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') marker.click(); };
+    li.appendChild(marker);
   };
   if (day.entries.length) {
     detail.appendChild(make('h4', '', '完成项'));
@@ -1001,7 +1054,7 @@ async function render() {
   zoomReset.onclick = () => setBoardZoom(1, zoomCanvas, zoomReset, zoomFrame);
   zoomIn.onclick = () => setBoardZoom(clampZoom(state.zoom) + 0.1, zoomCanvas, zoomReset, zoomFrame);
   zoomControls.append(zoomOut, zoomReset, zoomIn);
-  controls.append(prevYear, nextYear, today, zoomControls, theme, ...presetButtons, bg);
+  controls.append(prevYear, nextYear, today, theme, ...presetButtons, bg);
   head.appendChild(controls);
   root.appendChild(head);
 
@@ -1116,16 +1169,19 @@ async function render() {
   resizer.addEventListener('pointerup', ev => { dragging = false; try { resizer.releasePointerCapture(ev.pointerId); } catch {} });
 
   const viewport = make('div', 'mjb-zoom-viewport');
+  const toolbar = make('div', 'mjb-zoom-toolbar');
   const frame = make('div', 'mjb-zoom-frame');
   const canvas = make('div', 'mjb-zoom-canvas');
   zoomCanvas = canvas;
   zoomFrame = frame;
+  toolbar.appendChild(zoomControls);
   canvas.appendChild(root);
   frame.appendChild(canvas);
-  viewport.appendChild(frame);
+  viewport.append(toolbar, frame);
   ROOT.replaceChildren(viewport);
   requestAnimationFrame(() => applyBoardZoom(canvas, zoomReset, frame));
   installZoomGestures(viewport, canvas, zoomReset, frame);
+  installZoomResize(viewport, canvas, zoomReset, frame);
 }
 
   try {
