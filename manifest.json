@@ -4,7 +4,7 @@
   "version": "0.1.1",
   "minAppVersion": "1.5.0",
   "main": "main.js",
-  "description": "Configurable monthly calendar board for journal, tasks, clippings, and photos.",
+  "description": "Configurable monthly calendar board for journals, tasks, clippings, notes, and photos.",
   "author": "linnayi",
   "authorUrl": "",
   "isDesktopOnly": false
