@@ -27,7 +27,7 @@ function createMonthlyBoardRenderer() {
 
 const DEFAULT_CONFIG = {
   stateKey: 'obsidian-monthly-journal-board:v1',
-  version: 'v2026-05-24 19:28 compact-side-ratio',
+  version: 'v2026-05-24 22:38 mobile-image-paths',
   monthsCn: ['一月','二月','三月','四月','五月','六月','七月','八月','九月','十月','十一月','十二月'],
   monthsEn: ['January','February','March','April','May','June','July','August','September','October','November','December'],
   weekdays: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
@@ -296,6 +296,18 @@ function uniqueItems(items) {
     return true;
   });
 }
+function resolveImageFile(clean, filePath) {
+  const raw = decodeURIComponent(String(clean || '').trim()).replace(/\\/g, '/').replace(/^\.\//, '');
+  if (!raw) return null;
+  const sourceDir = String(filePath || '').split('/').slice(0, -1).join('/');
+  const candidates = [raw];
+  if (sourceDir && !raw.startsWith('/')) candidates.push(`${sourceDir}/${raw}`);
+  for (const candidate of candidates) {
+    const direct = app.vault.getAbstractFileByPath(candidate);
+    if (direct) return direct;
+  }
+  return app.metadataCache.getFirstLinkpathDest(raw, filePath);
+}
 function extractImageFromRaw(raw, filePath) {
   const candidates = [];
   const text = String(raw || '');
@@ -309,7 +321,7 @@ function extractImageFromRaw(raw, filePath) {
     const wiki = val.match(/^\[\[([^\]]+)\]\]$/);
     const link = wiki ? wiki[1] : val;
     const clean = link.split('|')[0].split('#')[0].trim();
-    const dest = app.metadataCache.getFirstLinkpathDest(clean, filePath);
+    const dest = resolveImageFile(clean, filePath);
     if (dest) return app.vault.getResourcePath(dest);
   }
   return '';
