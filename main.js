@@ -102,6 +102,7 @@ let state = Object.assign({
   theme: 'garden',
   sideWidth: 320,
   sideHidden: false,
+  zoom: 1,
   selectedDate: '',
   bg: '',
   monthNotes: {},
@@ -402,6 +403,63 @@ function setImageCover(dateStr, image) {
   else delete state.imageCovers[dateStr];
   saveState(state);
 }
+function clampZoom(value) {
+  const zoom = Number(value);
+  return Math.max(0.65, Math.min(1.8, Number.isFinite(zoom) ? zoom : 1));
+}
+function zoomLabel() {
+  return `${Math.round(clampZoom(state.zoom) * 100)}%`;
+}
+function touchDistance(touches) {
+  if (!touches || touches.length < 2) return 0;
+  const dx = touches[0].clientX - touches[1].clientX;
+  const dy = touches[0].clientY - touches[1].clientY;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+function applyBoardZoom(canvas, label) {
+  const zoom = clampZoom(state.zoom);
+  if (canvas) {
+    if (typeof CSS !== 'undefined' && CSS.supports?.('zoom', '1.1')) {
+      canvas.style.zoom = String(zoom);
+      canvas.style.transform = '';
+      canvas.style.width = '';
+    } else {
+      canvas.style.zoom = '';
+      canvas.style.transform = `scale(${zoom})`;
+      canvas.style.transformOrigin = 'top left';
+      canvas.style.width = `${100 / zoom}%`;
+    }
+  }
+  if (label) setText(label, zoomLabel());
+}
+function setBoardZoom(value, canvas, label) {
+  state.zoom = clampZoom(value);
+  saveState(state);
+  applyBoardZoom(canvas, label);
+}
+function installZoomGestures(viewport, canvas, label) {
+  let pinch = null;
+  viewport.addEventListener('touchstart', ev => {
+    if (ev.touches.length !== 2) return;
+    pinch = { distance: touchDistance(ev.touches), zoom: clampZoom(state.zoom) };
+    ev.preventDefault();
+  }, { passive: false });
+  viewport.addEventListener('touchmove', ev => {
+    if (!pinch || ev.touches.length !== 2) return;
+    const nextDistance = touchDistance(ev.touches);
+    if (nextDistance > 0 && pinch.distance > 0) setBoardZoom(pinch.zoom * nextDistance / pinch.distance, canvas, label);
+    ev.preventDefault();
+  }, { passive: false });
+  viewport.addEventListener('touchend', ev => {
+    if (ev.touches.length < 2) pinch = null;
+  }, { passive: true });
+  viewport.addEventListener('wheel', ev => {
+    if (!ev.ctrlKey) return;
+    ev.preventDefault();
+    const factor = ev.deltaY > 0 ? 0.92 : 1.08;
+    setBoardZoom(clampZoom(state.zoom) * factor, canvas, label);
+  }, { passive: false });
+}
 function relatedLabel(source, title) {
   return source ? `${source} · ${title}` : title;
 }
@@ -505,6 +563,11 @@ ${handFontFace}.monthly-journal-board .markdown-preview-section { max-width: 100
 .mjb-root[data-theme="custom"] .mjb-weekdays { color: rgba(247,251,255,.88); text-shadow: 0 2px 7px rgba(0,0,0,.72), 0 0 1px rgba(0,0,0,.9); }
 .mjb-root[data-theme="custom"] .mjb-month-tab { color: rgba(247,251,255,.88); background: rgba(15,27,43,.28); text-shadow: 0 1px 4px rgba(0,0,0,.45); }
 .mjb-root[data-theme="custom"] .mjb-month-tab.is-active { color: #19324a; background: rgba(238,247,255,.92); text-shadow: none; }
+.mjb-zoom-viewport { width: 100%; overflow: auto; touch-action: pan-x pan-y; overscroll-behavior: contain; }
+.mjb-zoom-canvas { transform-origin: top left; }
+.mjb-zoom-controls { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--mjb-line); border-radius: 999px; padding: 2px; background: rgba(255,255,255,.28); backdrop-filter: blur(10px); }
+.mjb-zoom-controls button { min-width: 30px; padding: 5px 8px; }
+.mjb-zoom-reset { min-width: 48px !important; }
 .mjb-root::before { content: ''; position: absolute; inset: 0; pointer-events: none; background-image: radial-gradient(rgba(255,255,255,.35) 0.7px, transparent 0.7px); background-size: 5px 5px; opacity: .24; }
 .mjb-head, .mjb-main { position: relative; z-index: 1; }
 .mjb-head { display: flex; gap: 16px; align-items: center; justify-content: space-between; margin-bottom: 18px; }
@@ -833,7 +896,7 @@ async function render() {
   const root = make('div', 'mjb-root');
   root.dataset.theme = state.theme;
   root.dataset.sideHidden = state.sideHidden ? 'true' : 'false';
-  root.style.setProperty('--mjb-side', `${Math.max(240, Number(state.sideWidth) || 320)}px`);
+  root.style.setProperty('--mjb-side', `${Math.max(150, Number(state.sideWidth) || 300)}px`);
   applyBackground(root, state.bg);
 
   const head = make('div', 'mjb-head');
@@ -875,7 +938,18 @@ async function render() {
     button.onclick = () => { state.bg = preset.image || ''; state.theme = 'custom'; render(); };
     return button;
   });
-  controls.append(prevYear, nextYear, today, theme, ...presetButtons, bg);
+  const zoomControls = make('div', 'mjb-zoom-controls');
+  const zoomOut = make('button', '', '−');
+  zoomOut.title = '缩小月历';
+  const zoomReset = make('button', 'mjb-zoom-reset', zoomLabel());
+  zoomReset.title = '重置缩放';
+  const zoomIn = make('button', '', '+');
+  zoomIn.title = '放大月历';
+  zoomOut.onclick = () => setBoardZoom(clampZoom(state.zoom) - 0.1, null, zoomReset);
+  zoomReset.onclick = () => setBoardZoom(1, null, zoomReset);
+  zoomIn.onclick = () => setBoardZoom(clampZoom(state.zoom) + 0.1, null, zoomReset);
+  zoomControls.append(zoomOut, zoomReset, zoomIn);
+  controls.append(prevYear, nextYear, today, zoomControls, theme, ...presetButtons, bg);
   head.appendChild(controls);
   root.appendChild(head);
 
@@ -987,7 +1061,14 @@ async function render() {
     saveState(state);
   });
   resizer.addEventListener('pointerup', ev => { dragging = false; try { resizer.releasePointerCapture(ev.pointerId); } catch {} });
-  ROOT.replaceChildren(root);
+
+  const viewport = make('div', 'mjb-zoom-viewport');
+  const canvas = make('div', 'mjb-zoom-canvas');
+  canvas.appendChild(root);
+  viewport.appendChild(canvas);
+  applyBoardZoom(canvas, zoomReset);
+  installZoomGestures(viewport, canvas, zoomReset);
+  ROOT.replaceChildren(viewport);
 }
 
   try {
