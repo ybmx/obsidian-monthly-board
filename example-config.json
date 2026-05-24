@@ -1,0 +1,39 @@
+{
+  "stateKey": "monthly-board:default",
+  "version": "example-config",
+  "journal": {
+    "query": "\"Journal\"",
+    "dailyFilePattern": "^\\d{4}-\\d{2}-\\d{2}$"
+  },
+  "dateFields": [
+    "date",
+    "created",
+    "created_at",
+    "updated",
+    "modified_at",
+    "due",
+    "start",
+    "end"
+  ],
+  "sources": [
+    { "query": "\"Journal\"", "label": "Journal" },
+    { "query": "\"Projects\"", "label": "Projects" },
+    { "query": "\"Clippings\"", "label": "Clippings" }
+  ],
+  "periodicNotes": {
+    "year": ["Journal/{year}/{year}.md", "{year}.md"],
+    "month": [
+      "Journal/{year}/{year}-Q{quarter}/{monthNameEn}, {year}/{monthNameEn}, {year}.md",
+      "{monthNameEn}, {year}.md"
+    ],
+    "week": [
+      "Journal/{mondayYear}/{mondayYear}-Q{mondayQuarter}/{mondayMonthNameEn}, {mondayYear}/{isoYear}-W{week2}.md",
+      "{isoYear}-W{week2}.md"
+    ]
+  },
+  "theme": {
+    "handwritingFont": "",
+    "options": [["garden", "Garden"], ["paper", "Paper"], ["night", "Night"], ["rose", "Rose"], ["custom", "Custom"]],
+    "backgroundPresets": []
+  }
+}
