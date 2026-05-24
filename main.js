@@ -195,7 +195,7 @@ function make(tag, cls, text) {
 function safeUrl(url) {
   const raw = String(url || '').trim();
   if (!raw) return '';
-  if (/^(https?:|app:|obsidian:)/i.test(raw)) return raw;
+  if (/^(https?:|app:|obsidian:|capacitor:|file:|blob:|cdvfile:)/i.test(raw)) return raw;
   if (raw.startsWith('data:image/')) return raw;
   return '';
 }
