@@ -27,7 +27,7 @@ function createMonthlyBoardRenderer() {
 
 const DEFAULT_CONFIG = {
   stateKey: 'obsidian-monthly-journal-board:v1',
-  version: 'v2026-05-25 00:08 canvas-pan-zoom',
+  version: 'v2026-05-25 00:35 stable-cover-grid-hide',
   monthsCn: ['一月','二月','三月','四月','五月','六月','七月','八月','九月','十月','十一月','十二月'],
   monthsEn: ['January','February','March','April','May','June','July','August','September','October','November','December'],
   weekdays: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
@@ -109,6 +109,7 @@ let state = Object.assign({
   imageCovers: {},
   imageFocus: {},
   imageToolsOpen: {},
+  hiddenGridItems: {},
 }, loadState());
 
 function pad(n) { return String(n).padStart(2, '0'); }
@@ -309,6 +310,19 @@ function resolveImageFile(clean, filePath) {
   }
   return app.metadataCache.getFirstLinkpathDest(raw, filePath);
 }
+function imageEntryKey(urlOrPath) {
+  return imageKey(urlOrPath);
+}
+function makeImageEntry(url, key) {
+  const imageUrl = String(url || '').trim();
+  if (!imageUrl) return null;
+  return { url: imageUrl, key: String(key || imageEntryKey(imageUrl)) };
+}
+function normalizeImageEntry(image) {
+  if (!image) return null;
+  if (typeof image === 'object') return makeImageEntry(image.url, image.key);
+  return makeImageEntry(String(image), imageEntryKey(image));
+}
 function extractImageFromRaw(raw, filePath) {
   const candidates = [];
   const text = String(raw || '');
@@ -318,14 +332,14 @@ function extractImageFromRaw(raw, filePath) {
   for (const candidate of candidates) {
     const val = String(candidate || '').trim();
     if (!val) continue;
-    if (/^https?:\/\//i.test(val)) return val;
+    if (/^https?:\/\//i.test(val)) return makeImageEntry(val, imageEntryKey(val));
     const wiki = val.match(/^\[\[([^\]]+)\]\]$/);
     const link = wiki ? wiki[1] : val;
     const clean = link.split('|')[0].split('#')[0].trim();
     const dest = resolveImageFile(clean, filePath);
-    if (dest) return app.vault.getResourcePath(dest);
+    if (dest) return makeImageEntry(app.vault.getResourcePath(dest), dest.path || clean);
   }
-  return '';
+  return null;
 }
 function stripFrontmatter(raw) {
   return String(raw || '').replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
@@ -362,13 +376,15 @@ function addDayData(byDate, date, patch) {
   const current = byDate.get(date) || { entries: [], related: [], images: [], path: '', raw: '', essay: '' };
   if (patch.entries) current.entries = uniqueItems([...current.entries, ...patch.entries]);
   if (patch.related) current.related = uniqueItems([...current.related, ...patch.related]);
-  if (patch.image && !current.images.includes(patch.image)) current.images.push(patch.image);
+  const imageEntry = normalizeImageEntry(patch.image);
+  if (imageEntry && !current.images.some(img => img.key === imageEntry.key)) current.images.push(imageEntry);
   if (patch.path && !current.path) current.path = patch.path;
   if (patch.raw) current.raw = patch.raw;
   if (patch.essay) current.essay = patch.essay;
-  const preferred = state.imageCovers?.[date];
-  const preferredKey = imageKey(preferred);
-  current.image = preferredKey ? (current.images.find(img => imageKey(img) === preferredKey) || current.images[0] || '') : (current.images[0] || '');
+  const preferredKey = String(state.imageCovers?.[date] || '');
+  const selected = preferredKey ? (current.images.find(img => img.key === preferredKey) || current.images[0] || null) : (current.images[0] || null);
+  current.image = selected?.url || '';
+  current.imageKey = selected?.key || '';
   byDate.set(date, current);
 }
 function autoFocusForImageUrl(url) {
@@ -399,8 +415,27 @@ function setImageFocus(dateStr, x, y) {
 }
 function setImageCover(dateStr, image) {
   if (!state.imageCovers) state.imageCovers = {};
-  if (image) state.imageCovers[dateStr] = imageKey(image);
+  const entry = normalizeImageEntry(image);
+  if (entry) state.imageCovers[dateStr] = entry.key;
   else delete state.imageCovers[dateStr];
+  saveState(state);
+}
+function itemGridKey(item) {
+  if (!item) return '';
+  if (item.id) return `id:${String(item.id).toLowerCase()}`;
+  if (item.path) return `path:${String(item.path)}`;
+  return `text:${item.source || ''}|${item.time || ''}|${cleanItemTitle(item.title).toLowerCase()}|${item.url || ''}`;
+}
+function isGridHidden(item) {
+  const key = itemGridKey(item);
+  return !!(key && state.hiddenGridItems?.[key]);
+}
+function setGridHidden(item, hidden) {
+  const key = itemGridKey(item);
+  if (!key) return;
+  if (!state.hiddenGridItems) state.hiddenGridItems = {};
+  if (hidden) state.hiddenGridItems[key] = true;
+  else delete state.hiddenGridItems[key];
   saveState(state);
 }
 function clampZoom(value) {
@@ -639,6 +674,9 @@ a.mjb-date:hover { filter: brightness(1.06); transform: translateY(-1px); }
 .mjb-detail a { color: var(--mjb-ink) !important; }
 .mjb-detail-list { padding-left: 18px; margin-top: 8px; }
 .mjb-detail-list li { margin: 6px 0; line-height: 1.42; }
+.mjb-grid-toggle { border: 1px solid var(--mjb-line); border-radius: 999px; padding: 2px 7px; margin-left: 4px; background: rgba(255,255,255,.42); color: var(--mjb-muted); cursor: pointer; font-size: 10px; font-weight: 800; }
+.mjb-grid-toggle.is-hidden { color: var(--mjb-ink); background: rgba(255,255,255,.70); }
+.mjb-grid-toggle:hover { color: var(--mjb-ink); background: rgba(255,255,255,.76); }
 .mjb-detail-image { display: block; width: 100%; max-height: 220px; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 18px; margin: 12px 0 14px; border: 1px solid var(--mjb-line); box-shadow: 0 10px 28px rgba(0,0,0,.12); opacity: 1; filter: none !important; mix-blend-mode: normal; }
 .mjb-root[data-theme="night"] .mjb-detail-image { box-shadow: 0 10px 28px rgba(18,30,46,.18); }
 .mjb-photo-toggle { display: inline-flex; margin: -4px 0 10px; border: 1px solid var(--mjb-line); border-radius: 999px; padding: 5px 10px; background: rgba(255,255,255,.56); color: var(--mjb-ink); cursor: pointer; font-size: 11px; font-weight: 800; }
@@ -810,15 +848,16 @@ function renderDetail(side, data, dateStr) {
 
       if ((day.images || []).length > 1) {
         const grid = make('div', 'mjb-photo-grid');
-        for (const src of day.images) {
-          const choice = make('button', `mjb-photo-choice${src === day.image ? ' is-active' : ''}`);
+        for (const image of day.images) {
+          const src = image.url || '';
+          const choice = make('button', `mjb-photo-choice${image.key === day.imageKey ? ' is-active' : ''}`);
           choice.title = '设为格子和右侧置顶照片';
           const thumb = make('img');
           thumb.loading = 'lazy';
           thumb.src = safeUrl(src);
           choice.appendChild(thumb);
           choice.onclick = async () => {
-            setImageCover(dateStr, src);
+            setImageCover(dateStr, image);
             const next = await autoFocusForImageUrl(safeUrl(src));
             setImageFocus(dateStr, next.x, next.y);
             render();
@@ -850,6 +889,14 @@ function renderDetail(side, data, dateStr) {
       detail.appendChild(panel);
     }
   }
+  const addGridToggle = (li, item) => {
+    const hidden = isGridHidden(item);
+    li.appendChild(document.createTextNode(' '));
+    const button = make('button', `mjb-grid-toggle${hidden ? ' is-hidden' : ''}`, hidden ? '放回格子' : '不放格子');
+    button.title = hidden ? '重新显示在日期格子里' : '只在右侧详情里显示，不占日期格子';
+    button.onclick = ev => { ev.preventDefault(); ev.stopPropagation(); setGridHidden(item, !hidden); render(); };
+    li.appendChild(button);
+  };
   if (day.entries.length) {
     detail.appendChild(make('h4', '', '完成项'));
     const ul = make('ul', 'mjb-detail-list');
@@ -863,6 +910,7 @@ function renderDetail(side, data, dateStr) {
         a.href = safeUrl(item.url);
         li.appendChild(a);
       }
+      addGridToggle(li, item);
       ul.appendChild(li);
     }
     detail.appendChild(ul);
@@ -882,6 +930,7 @@ function renderDetail(side, data, dateStr) {
         a.href = safeUrl(item.url);
         li.appendChild(a);
       }
+      addGridToggle(li, item);
       ul.appendChild(li);
     }
     detail.appendChild(ul);
@@ -1019,9 +1068,10 @@ async function render() {
       }
       const items = make('div', 'mjb-items');
       const allItems = [...(info?.entries || []), ...(info?.related || [])];
-      const visible = allItems.slice(0, info?.image ? 2 : 3);
+      const gridItems = allItems.filter(item => !isGridHidden(item));
+      const visible = gridItems.slice(0, info?.image ? 2 : 3);
       for (const item of visible) items.appendChild(make('div', 'mjb-item', `${item.time ? item.time + ' ' : ''}${item.title}`));
-      if (allItems.length > visible.length) items.appendChild(make('div', 'mjb-more', `+${allItems.length - visible.length} more`));
+      if (gridItems.length > visible.length) items.appendChild(make('div', 'mjb-more', `+${gridItems.length - visible.length} more`));
       card.appendChild(items);
       if (allItems.length || info?.image) card.title = '点击查看完整详情';
       grid.appendChild(card);
