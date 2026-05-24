@@ -27,7 +27,7 @@ function createMonthlyBoardRenderer() {
 
 const DEFAULT_CONFIG = {
   stateKey: 'obsidian-monthly-journal-board:v1',
-  version: 'v2026-05-24 22:38 mobile-image-paths',
+  version: 'v2026-05-24 23:58 simple-whole-zoom',
   monthsCn: ['一月','二月','三月','四月','五月','六月','七月','八月','九月','十月','十一月','十二月'],
   monthsEn: ['January','February','March','April','May','June','July','August','September','October','November','December'],
   weekdays: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
@@ -419,16 +419,10 @@ function touchDistance(touches) {
 function applyBoardZoom(canvas, label) {
   const zoom = clampZoom(state.zoom);
   if (canvas) {
-    if (typeof CSS !== 'undefined' && CSS.supports?.('zoom', '1.1')) {
-      canvas.style.zoom = String(zoom);
-      canvas.style.transform = '';
-      canvas.style.width = '';
-    } else {
-      canvas.style.zoom = '';
-      canvas.style.transform = `scale(${zoom})`;
-      canvas.style.transformOrigin = 'top left';
-      canvas.style.width = `${100 / zoom}%`;
-    }
+    canvas.style.zoom = '';
+    canvas.style.transform = `scale(${zoom})`;
+    canvas.style.transformOrigin = 'top left';
+    canvas.style.width = '100%';
   }
   if (label) setText(label, zoomLabel());
 }
@@ -564,7 +558,7 @@ ${handFontFace}.monthly-journal-board .markdown-preview-section { max-width: 100
 .mjb-root[data-theme="custom"] .mjb-month-tab { color: rgba(247,251,255,.88); background: rgba(15,27,43,.28); text-shadow: 0 1px 4px rgba(0,0,0,.45); }
 .mjb-root[data-theme="custom"] .mjb-month-tab.is-active { color: #19324a; background: rgba(238,247,255,.92); text-shadow: none; }
 .mjb-zoom-viewport { width: 100%; overflow: auto; touch-action: pan-x pan-y; overscroll-behavior: contain; }
-.mjb-zoom-canvas { transform-origin: top left; }
+.mjb-zoom-canvas { transform-origin: top left; width: 100%; will-change: transform; }
 .mjb-zoom-controls { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--mjb-line); border-radius: 999px; padding: 2px; background: rgba(255,255,255,.28); backdrop-filter: blur(10px); }
 .mjb-zoom-controls button { min-width: 30px; padding: 5px 8px; }
 .mjb-zoom-reset { min-width: 48px !important; }
@@ -690,7 +684,7 @@ function applyBackground(root, input) {
   const wiki = raw.match(/^!??\[\[([^\]]+)\]\]$/);
   if (wiki) {
     const clean = wiki[1].split('|')[0].split('#')[0].trim();
-    const dest = app.metadataCache.getFirstLinkpathDest(clean, dv.current().file.path);
+    const dest = resolveImageFile(clean, dv.current().file.path);
     if (dest) url = app.vault.getResourcePath(dest);
   }
   if (safeUrl(url)) root.style.setProperty('--mjb-bg-image', `url("${url.replace(/"/g, '%22')}")`);
