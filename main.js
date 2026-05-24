@@ -27,7 +27,7 @@ function createMonthlyBoardRenderer() {
 
 const DEFAULT_CONFIG = {
   stateKey: 'obsidian-monthly-journal-board:v1',
-  version: 'v2026-05-24 23:58 simple-whole-zoom',
+  version: 'v2026-05-25 00:08 canvas-pan-zoom',
   monthsCn: ['一月','二月','三月','四月','五月','六月','七月','八月','九月','十月','十一月','十二月'],
   monthsEn: ['January','February','March','April','May','June','July','August','September','October','November','December'],
   weekdays: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
@@ -416,22 +416,29 @@ function touchDistance(touches) {
   const dy = touches[0].clientY - touches[1].clientY;
   return Math.sqrt(dx * dx + dy * dy);
 }
-function applyBoardZoom(canvas, label) {
+function applyBoardZoom(canvas, label, frame) {
   const zoom = clampZoom(state.zoom);
   if (canvas) {
     canvas.style.zoom = '';
     canvas.style.transform = `scale(${zoom})`;
     canvas.style.transformOrigin = 'top left';
     canvas.style.width = '100%';
+    if (frame) {
+      const rect = canvas.getBoundingClientRect();
+      const baseWidth = canvas.offsetWidth || rect.width / zoom || 1;
+      const baseHeight = canvas.offsetHeight || rect.height / zoom || 1;
+      frame.style.width = `${Math.ceil(baseWidth * zoom)}px`;
+      frame.style.height = `${Math.ceil(baseHeight * zoom)}px`;
+    }
   }
   if (label) setText(label, zoomLabel());
 }
-function setBoardZoom(value, canvas, label) {
+function setBoardZoom(value, canvas, label, frame) {
   state.zoom = clampZoom(value);
   saveState(state);
-  applyBoardZoom(canvas, label);
+  applyBoardZoom(canvas, label, frame);
 }
-function installZoomGestures(viewport, canvas, label) {
+function installZoomGestures(viewport, canvas, label, frame) {
   let pinch = null;
   viewport.addEventListener('touchstart', ev => {
     if (ev.touches.length !== 2) return;
@@ -441,7 +448,7 @@ function installZoomGestures(viewport, canvas, label) {
   viewport.addEventListener('touchmove', ev => {
     if (!pinch || ev.touches.length !== 2) return;
     const nextDistance = touchDistance(ev.touches);
-    if (nextDistance > 0 && pinch.distance > 0) setBoardZoom(pinch.zoom * nextDistance / pinch.distance, canvas, label);
+    if (nextDistance > 0 && pinch.distance > 0) setBoardZoom(pinch.zoom * nextDistance / pinch.distance, canvas, label, frame);
     ev.preventDefault();
   }, { passive: false });
   viewport.addEventListener('touchend', ev => {
@@ -939,9 +946,11 @@ async function render() {
   zoomReset.title = '重置缩放';
   const zoomIn = make('button', '', '+');
   zoomIn.title = '放大月历';
-  zoomOut.onclick = () => setBoardZoom(clampZoom(state.zoom) - 0.1, null, zoomReset);
-  zoomReset.onclick = () => setBoardZoom(1, null, zoomReset);
-  zoomIn.onclick = () => setBoardZoom(clampZoom(state.zoom) + 0.1, null, zoomReset);
+  let zoomCanvas = null;
+  let zoomFrame = null;
+  zoomOut.onclick = () => setBoardZoom(clampZoom(state.zoom) - 0.1, zoomCanvas, zoomReset, zoomFrame);
+  zoomReset.onclick = () => setBoardZoom(1, zoomCanvas, zoomReset, zoomFrame);
+  zoomIn.onclick = () => setBoardZoom(clampZoom(state.zoom) + 0.1, zoomCanvas, zoomReset, zoomFrame);
   zoomControls.append(zoomOut, zoomReset, zoomIn);
   controls.append(prevYear, nextYear, today, zoomControls, theme, ...presetButtons, bg);
   head.appendChild(controls);
@@ -1057,12 +1066,16 @@ async function render() {
   resizer.addEventListener('pointerup', ev => { dragging = false; try { resizer.releasePointerCapture(ev.pointerId); } catch {} });
 
   const viewport = make('div', 'mjb-zoom-viewport');
+  const frame = make('div', 'mjb-zoom-frame');
   const canvas = make('div', 'mjb-zoom-canvas');
+  zoomCanvas = canvas;
+  zoomFrame = frame;
   canvas.appendChild(root);
-  viewport.appendChild(canvas);
-  applyBoardZoom(canvas, zoomReset);
-  installZoomGestures(viewport, canvas, zoomReset);
+  frame.appendChild(canvas);
+  viewport.appendChild(frame);
   ROOT.replaceChildren(viewport);
+  requestAnimationFrame(() => applyBoardZoom(canvas, zoomReset, frame));
+  installZoomGestures(viewport, canvas, zoomReset, frame);
 }
 
   try {
