@@ -27,7 +27,7 @@ function createMonthlyBoardRenderer() {
 
 const DEFAULT_CONFIG = {
   stateKey: 'obsidian-monthly-journal-board:v1',
-  version: 'v2026-05-25 01:32 dynamic-frame-zoom',
+  version: 'v2026-05-25 01:51 single-side-blank-fix',
   monthsCn: ['一月','二月','三月','四月','五月','六月','七月','八月','九月','十月','十一月','十二月'],
   monthsEn: ['January','February','March','April','May','June','July','August','September','October','November','December'],
   weekdays: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
@@ -79,7 +79,9 @@ async function renderMonthlyBoard(ctx = {}) {
   ROOT.style.width = '100%';
   ROOT.style.maxWidth = 'none';
   const previewSection = ROOT.closest?.('.markdown-preview-section');
-  if (previewSection) previewSection.style.maxWidth = 'none';
+  if (previewSection) { previewSection.style.maxWidth = 'none'; previewSection.style.width = '100%'; }
+  const previewSizer = ROOT.closest?.('.markdown-preview-sizer');
+  if (previewSizer) { previewSizer.style.maxWidth = 'none'; previewSizer.style.width = '100%'; }
   const config = mergeDeep(DEFAULT_CONFIG, ctx.config || {});
   const STATE_KEY = config.stateKey;
   const BOARD_VERSION = config.version || DEFAULT_CONFIG.version;
@@ -523,14 +525,26 @@ function installZoomGestures(viewport, canvas, label, frame) {
 function installZoomResize(viewport, canvas, label, frame) {
   let raf = 0;
   let observer = null;
+  let lastWidth = 0;
+  let lastScale = 0;
   const refresh = () => {
     if (!viewport.isConnected) {
       observer?.disconnect();
       window.removeEventListener('resize', refresh);
       return;
     }
+    const width = Math.round(viewport.clientWidth || 0);
+    const scale = Math.round(obsidianUiScale() * 1000) / 1000;
+    const widthChanged = Math.abs(width - lastWidth) >= 2;
+    const scaleChanged = Math.abs(scale - lastScale) >= 0.002;
+    if (!widthChanged && !scaleChanged) return;
+    lastWidth = width;
+    lastScale = scale;
     cancelAnimationFrame(raf);
-    raf = requestAnimationFrame(() => applyBoardZoom(canvas, label, frame));
+    raf = requestAnimationFrame(() => {
+      applyBoardZoom(canvas, label, frame);
+      if (widthChanged) viewport.scrollLeft = 0;
+    });
   };
   if (typeof ResizeObserver !== 'undefined') {
     observer = new ResizeObserver(refresh);
@@ -644,7 +658,7 @@ ${handFontFace}.monthly-journal-board .markdown-preview-section { max-width: 100
 .mjb-root[data-theme="custom"] .mjb-weekdays { color: rgba(247,251,255,.88); text-shadow: 0 2px 7px rgba(0,0,0,.72), 0 0 1px rgba(0,0,0,.9); }
 .mjb-root[data-theme="custom"] .mjb-month-tab { color: rgba(247,251,255,.88); background: rgba(15,27,43,.28); text-shadow: 0 1px 4px rgba(0,0,0,.45); }
 .mjb-root[data-theme="custom"] .mjb-month-tab.is-active { color: #19324a; background: rgba(238,247,255,.92); text-shadow: none; }
-.mjb-zoom-viewport { width: 100%; overflow: auto; touch-action: pan-x pan-y; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.mjb-zoom-viewport { width: 100%; overflow: auto; touch-action: pan-x pan-y; overscroll-behavior: contain; scrollbar-gutter: stable; -webkit-overflow-scrolling: touch; }
 .mjb-zoom-toolbar { position: sticky; top: 0; left: 0; z-index: 30; display: flex; justify-content: flex-end; width: 100%; box-sizing: border-box; padding: 0 0 8px; pointer-events: none; }
 .mjb-zoom-toolbar .mjb-zoom-controls { pointer-events: auto; }
 .mjb-zoom-frame { position: relative; }
@@ -669,7 +683,7 @@ ${handFontFace}.monthly-journal-board .markdown-preview-section { max-width: 100
 .mjb-month-tab { border: 0; border-radius: 999px; padding: 6px 10px; background: rgba(255,255,255,.32); color: var(--mjb-muted); cursor: pointer; }
 .mjb-month-tab.is-active { color: white; background: var(--mjb-accent); box-shadow: 0 6px 20px rgba(80,120,70,.22); }
 .mjb-main { display: grid; grid-template-columns: minmax(0, 1fr) 8px clamp(150px, 30%, var(--mjb-side)); gap: clamp(10px, 1.3vw, 16px); align-items: start; }
-.mjb-root[data-side-hidden="true"] .mjb-main { grid-template-columns: minmax(0, 1fr) 0 48px; gap: 10px; }
+.mjb-root[data-side-hidden="true"] .mjb-main { grid-template-columns: minmax(0, 1fr) 0 34px; gap: 8px; }
 .mjb-calendar { min-width: 0; }
 .mjb-weekdays { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: clamp(6px, .9vw, 10px); margin-bottom: 10px; color: var(--mjb-muted); font: 700 clamp(10px, 1.15vw, 13px) Georgia, serif; letter-spacing: .12em; }
 .mjb-weekdays > div { text-align: center; border-bottom: 2px solid var(--mjb-line); padding-bottom: 8px; white-space: nowrap; }
@@ -703,14 +717,14 @@ a.mjb-date:hover { filter: brightness(1.06); transform: translateY(-1px); }
 .mjb-resizer { border-radius: 999px; background: linear-gradient(var(--mjb-line), var(--mjb-accent), var(--mjb-line)); opacity: .45; cursor: col-resize; }
 .mjb-root[data-side-hidden="true"] .mjb-resizer { opacity: 0; pointer-events: none; }
 .mjb-side { min-width: 0; height: min(76vh, 720px); max-height: min(76vh, 720px); box-sizing: border-box; position: sticky; top: 12px; display: flex; flex-direction: column; border: 1px solid var(--mjb-line); border-radius: 24px; padding: 16px; background: rgba(255,255,255,.46); backdrop-filter: blur(12px); overflow: hidden; transition: padding .18s ease, border-radius .18s ease, background .18s ease; }
-.mjb-side.is-collapsed { min-width: 0; width: 48px; align-items: center; padding: 10px 6px; border-radius: 18px; cursor: pointer; }
+.mjb-side.is-collapsed { min-width: 0; width: 34px; height: auto; min-height: 104px; max-height: none; align-self: start; align-items: center; padding: 8px 4px; border-radius: 16px; cursor: pointer; }
 .mjb-side-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 10px; }
 .mjb-side h3 { margin: 0; font-family: Georgia, serif; font-size: 28px; }
 .mjb-side-toggle { border: 1px solid var(--mjb-line); border-radius: 999px; padding: 4px 8px; background: rgba(255,255,255,.34); color: var(--mjb-muted); cursor: pointer; font-size: 12px; font-weight: 850; line-height: 1; }
 .mjb-side-toggle:hover { color: var(--mjb-ink); background: rgba(255,255,255,.54); }
 .mjb-side.is-collapsed .mjb-side-head { writing-mode: vertical-rl; gap: 8px; margin: 0; }
-.mjb-side.is-collapsed h3 { font-size: 15px; letter-spacing: .08em; }
-.mjb-side.is-collapsed .mjb-side-toggle { padding: 6px 5px; }
+.mjb-side.is-collapsed h3 { font-size: 13px; letter-spacing: .06em; }
+.mjb-side.is-collapsed .mjb-side-toggle { padding: 4px 4px; font-size: 10px; }
 .mjb-side.is-collapsed .mjb-note-area,
 .mjb-side.is-collapsed .mjb-detail { display: none; }
 .mjb-note-area { width: 100%; min-height: 96px; max-height: 160px; resize: vertical; box-sizing: border-box; border: 1px solid var(--mjb-line); border-radius: 16px; background: rgba(255,255,255,.58); color: var(--mjb-ink); padding: 12px; margin: 8px 0 14px; flex: 0 0 auto; }
