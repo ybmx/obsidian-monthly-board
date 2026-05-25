@@ -4,7 +4,7 @@
 (function () {
 const DEFAULT_CONFIG = {
   stateKey: 'obsidian-monthly-journal-board:v1',
-  version: 'v2026-05-25 01:51 single-side-blank-fix',
+  version: 'v2026-05-25 13:22 reading-mode-markdown-notes',
   monthsCn: ['一月','二月','三月','四月','五月','六月','七月','八月','九月','十月','十一月','十二月'],
   monthsEn: ['January','February','March','April','May','June','July','August','September','October','November','December'],
   weekdays: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
@@ -95,6 +95,7 @@ let state = Object.assign({
   imageToolsOpen: {},
   hiddenGridItems: {},
 }, loadState());
+let monthMarkdownNoteTimer = 0;
 
 function pad(n) { return String(n).padStart(2, '0'); }
 function ymd(y, m, d) { return `${y}-${pad(m + 1)}-${pad(d)}`; }
@@ -136,6 +137,73 @@ function monthNotePath(year, month) {
   const q = quarterFromMonth(month);
   const vars = { year, quarter: q, month: pad(month + 1), monthName: MONTHS_CN[month], monthNameEn: MONTHS_EN[month] };
   return notePathFromCandidates([...templateCandidates(config.periodicNotes.month, vars), vars.monthName + ', ' + year, vars.monthNameEn + ', ' + year]);
+}
+function normalizeVaultPath(path) {
+  return String(path || '').replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+/g, '/');
+}
+function monthNoteTargetPath(year, month) {
+  const existing = monthNotePath(year, month);
+  if (existing) return existing;
+  const q = quarterFromMonth(month);
+  const vars = { year, quarter: q, month: pad(month + 1), monthName: MONTHS_CN[month], monthNameEn: MONTHS_EN[month] };
+  const candidate = templateCandidates(config.periodicNotes.month, vars)[0] || `Journal/${year}/${MONTHS_CN[month]}, ${year}.md`;
+  const path = normalizeVaultPath(candidate.endsWith('.md') ? candidate : candidate + '.md');
+  if (!path || /^[a-z]+:/i.test(path) || path.split('/').includes('..')) return '';
+  return path;
+}
+function markdownNotesEnabled() {
+  return !!(config.plugin?.writeNotesToMarkdown ?? config.notes?.writeToMarkdown);
+}
+const MONTH_NOTE_BEGIN = '<!-- MONTHLY-BOARD-NOTES:BEGIN -->';
+const MONTH_NOTE_END = '<!-- MONTHLY-BOARD-NOTES:END -->';
+async function ensureFolderForPath(path) {
+  const parts = normalizeVaultPath(path).split('/').slice(0, -1);
+  let current = '';
+  for (const part of parts) {
+    current = current ? `${current}/${part}` : part;
+    if (!app.vault.getAbstractFileByPath(current)) {
+      try { await app.vault.createFolder(current); } catch {}
+    }
+  }
+}
+function extractMarkedMonthNotes(raw) {
+  const start = String(raw || '').indexOf(MONTH_NOTE_BEGIN);
+  const end = String(raw || '').indexOf(MONTH_NOTE_END);
+  if (start < 0 || end < start) return '';
+  return String(raw || '').slice(start + MONTH_NOTE_BEGIN.length, end).replace(/^\r?\n|\r?\n$/g, '');
+}
+async function readMonthMarkdownNote(year, month) {
+  if (!markdownNotesEnabled()) return '';
+  const path = monthNotePath(year, month);
+  const file = path ? app.vault.getAbstractFileByPath(path) : null;
+  if (!file) return '';
+  return extractMarkedMonthNotes(await app.vault.read(file));
+}
+async function writeMonthMarkdownNote(year, month, text) {
+  if (!markdownNotesEnabled()) return;
+  const path = monthNoteTargetPath(year, month);
+  if (!path) return;
+  await ensureFolderForPath(path);
+  const file = app.vault.getAbstractFileByPath(path);
+  const block = `${MONTH_NOTE_BEGIN}\n${String(text || '').trimEnd()}\n${MONTH_NOTE_END}`;
+  if (!file) {
+    await app.vault.create(path, `# ${MONTHS_CN[month]} ${year}\n\n## Monthly Board Notes\n${block}\n`);
+    return;
+  }
+  const raw = await app.vault.read(file);
+  const start = raw.indexOf(MONTH_NOTE_BEGIN);
+  const end = raw.indexOf(MONTH_NOTE_END);
+  const next = start >= 0 && end >= start
+    ? raw.slice(0, start) + block + raw.slice(end + MONTH_NOTE_END.length)
+    : raw.replace(/\s*$/, '') + `\n\n## Monthly Board Notes\n${block}\n`;
+  if (next !== raw) await app.vault.modify(file, next);
+}
+function scheduleMonthMarkdownNoteSave(year, month, text) {
+  if (!markdownNotesEnabled()) return;
+  clearTimeout(monthMarkdownNoteTimer);
+  monthMarkdownNoteTimer = setTimeout(() => {
+    writeMonthMarkdownNote(year, month, text).catch(err => console.error('Monthly Board note save failed:', err));
+  }, 650);
 }
 function weekNotePath(info) {
   const m = info.monday.getMonth();
@@ -424,7 +492,7 @@ function setGridHidden(item, hidden) {
 }
 function clampZoom(value) {
   const zoom = Number(value);
-  return Math.max(0.65, Math.min(2.4, Number.isFinite(zoom) ? zoom : 1));
+  return Math.max(1, Math.min(2.4, Number.isFinite(zoom) ? zoom : 1));
 }
 function zoomLabel() {
   return `${Math.round(clampZoom(state.zoom) * 100)}%`;
@@ -442,13 +510,34 @@ function touchDistance(touches) {
   const dy = touches[0].clientY - touches[1].clientY;
   return Math.sqrt(dx * dx + dy * dy);
 }
+function stabilizeCalendarGrid(root) {
+  if (!root) return;
+  root.querySelectorAll('.mjb-grid').forEach(grid => {
+    const style = getComputedStyle(grid);
+    const gap = Number.parseFloat(style.columnGap || style.gap || '0') || 0;
+    const width = Math.max(1, grid.clientWidth || grid.getBoundingClientRect().width || grid.parentElement?.clientWidth || 1);
+    const daySize = Math.max(42, Math.floor((width - gap * 6) / 7));
+    grid.style.gridAutoRows = `${daySize}px`;
+    grid.querySelectorAll('.mjb-day').forEach(day => {
+      day.style.height = `${daySize}px`;
+      day.style.minHeight = `${daySize}px`;
+    });
+  });
+}
 function applyBoardZoom(canvas, label, frame) {
   const boardZoom = clampZoom(state.zoom);
   const uiScale = obsidianUiScale();
   const zoom = boardZoom * uiScale;
   if (canvas) {
     const viewport = frame?.parentElement || canvas.parentElement;
-    const viewportWidth = Math.max(1, Math.floor(viewport?.clientWidth || canvas.offsetWidth || 1));
+    const measuredWidth = Math.floor(viewport?.clientWidth || viewport?.getBoundingClientRect?.().width || 0);
+    const fallbackWidth = Math.floor(
+      viewport?.parentElement?.clientWidth ||
+      viewport?.closest?.('.markdown-preview-section')?.clientWidth ||
+      viewport?.closest?.('.markdown-preview-sizer')?.clientWidth ||
+      0
+    );
+    const viewportWidth = Math.max(1, measuredWidth >= 160 ? measuredWidth : (fallbackWidth || measuredWidth || canvas.offsetWidth || 1));
     if (frame) {
       frame.style.width = '';
       frame.style.height = '';
@@ -461,6 +550,7 @@ function applyBoardZoom(canvas, label, frame) {
     canvas.style.height = '';
     canvas.style.maxWidth = 'none';
     const root = canvas.firstElementChild;
+    stabilizeCalendarGrid(root);
     const baseHeight = Math.max(1, Math.ceil(root?.scrollHeight || canvas.scrollHeight || canvas.offsetHeight || 1));
     canvas.style.height = `${baseHeight}px`;
     canvas.style.transform = `scale(${zoom})`;
@@ -475,6 +565,8 @@ function setBoardZoom(value, canvas, label, frame) {
   state.zoom = clampZoom(value);
   saveState(state);
   applyBoardZoom(canvas, label, frame);
+  const viewport = frame?.parentElement || canvas?.parentElement;
+  if (viewport && state.zoom <= 1.001) viewport.scrollLeft = 0;
 }
 function installZoomGestures(viewport, canvas, label, frame) {
   let pinch = null;
@@ -525,9 +617,15 @@ function installZoomResize(viewport, canvas, label, frame) {
   };
   if (typeof ResizeObserver !== 'undefined') {
     observer = new ResizeObserver(refresh);
-    observer.observe(viewport);
+    [viewport, viewport.parentElement, viewport.closest?.('.markdown-preview-view'), viewport.closest?.('.view-content')]
+      .filter(Boolean)
+      .forEach(el => observer.observe(el));
   }
   window.addEventListener('resize', refresh, { passive: true });
+  refresh();
+  setTimeout(refresh, 60);
+  setTimeout(refresh, 180);
+  setTimeout(refresh, 420);
 }
 function relatedLabel(source, title) {
   return source ? `${source} · ${title}` : title;
@@ -664,8 +762,8 @@ ${handFontFace}.monthly-journal-board .markdown-preview-section { max-width: 100
 .mjb-calendar { min-width: 0; }
 .mjb-weekdays { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: clamp(6px, .9vw, 10px); margin-bottom: 10px; color: var(--mjb-muted); font: 700 clamp(10px, 1.15vw, 13px) Georgia, serif; letter-spacing: .12em; }
 .mjb-weekdays > div { text-align: center; border-bottom: 2px solid var(--mjb-line); padding-bottom: 8px; white-space: nowrap; }
-.mjb-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: clamp(6px, .9vw, 10px); }
-.mjb-day { position: relative; aspect-ratio: 1 / 1; min-height: 0; border: 1px solid var(--mjb-line); border-radius: clamp(12px, 1.4vw, 18px); background: var(--mjb-card); overflow: hidden; padding: 8px; cursor: pointer; transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease; }
+.mjb-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-auto-rows: minmax(42px, auto); align-items: start; gap: clamp(6px, .9vw, 10px); }
+.mjb-day { position: relative; aspect-ratio: auto; box-sizing: border-box; min-height: 42px; border: 1px solid var(--mjb-line); border-radius: clamp(12px, 1.4vw, 18px); background: var(--mjb-card); overflow: hidden; padding: 8px; cursor: pointer; transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease; }
 .mjb-day:hover { transform: translateY(-2px); border-color: rgba(121,169,101,.55); box-shadow: 0 12px 28px rgba(36,50,34,.13); z-index: 8; }
 .mjb-root img { max-width: none !important; margin: 0 !important; padding: 0 !important; opacity: 1 !important; filter: none !important; mix-blend-mode: normal !important; }
 .mjb-day.is-empty { opacity: .22; background: transparent; border-style: dashed; cursor: default; }
@@ -679,10 +777,10 @@ a.mjb-date:hover { filter: brightness(1.06); transform: translateY(-1px); }
 .mjb-day.has-image::after { content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none; background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,.02) 48%, rgba(0,0,0,.26) 100%); }
 .mjb-day:not(.has-image) .mjb-thumb { display: none; }
 .mjb-items { position: absolute; left: 7px; right: 7px; bottom: 7px; z-index: 2; display: flex; flex-direction: column; gap: 2px; }
-.mjb-item { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-family: 'AaYouLongZeLingKeAiTi', 'Kalam', 'Ma Shan Zheng', 'Comic Sans MS', cursive; font-size: clamp(10px, 1vw, 12px); letter-spacing: .01em; color: var(--mjb-ink); background: linear-gradient(90deg, rgba(255,255,255,.24), rgba(255,255,255,.12)); border-radius: 8px; padding: 1px 5px; font-weight: 700; text-shadow: 0 1px 2px rgba(255,255,255,.72), 0 0 1px rgba(255,255,255,.85); box-shadow: 0 1px 4px rgba(0,0,0,.045); }
-.mjb-day.has-image .mjb-item { color: #fff; background: linear-gradient(90deg, rgba(20,28,38,.30), rgba(20,28,38,.16)); text-shadow: 0 1px 4px rgba(0,0,0,.88), 0 0 1px rgba(0,0,0,.95); backdrop-filter: blur(.8px); }
-.mjb-more { font-family: 'AaYouLongZeLingKeAiTi', 'Kalam', 'Ma Shan Zheng', 'Comic Sans MS', cursive; font-size: clamp(10px, .95vw, 11px); color: var(--mjb-muted); margin-top: 1px; font-weight: 700; text-shadow: 0 1px 2px rgba(255,255,255,.62); }
-.mjb-day.has-image .mjb-more { color: rgba(255,255,255,.95); text-shadow: 0 1px 4px rgba(0,0,0,.9), 0 0 1px rgba(0,0,0,.95); }
+.mjb-item { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-family: 'AaYouLongZeLingKeAiTi', 'Kalam', 'Ma Shan Zheng', 'Comic Sans MS', cursive; font-size: clamp(10px, 1vw, 12px); letter-spacing: .01em; color: var(--mjb-ink); background: linear-gradient(90deg, rgba(255,255,255,.30), rgba(255,255,255,.16)); border-radius: 8px; padding: 1px 5px; font-weight: 800; text-shadow: 0 1px 1px rgba(255,255,255,.42); box-shadow: 0 1px 4px rgba(0,0,0,.045); }
+.mjb-day.has-image .mjb-item { color: #f7fbff; background: linear-gradient(90deg, rgba(8,14,22,.50), rgba(8,14,22,.30)); text-shadow: 0 1px 2px rgba(0,0,0,.95), 0 0 1px rgba(0,0,0,.85); backdrop-filter: blur(.8px); }
+.mjb-more { font-family: 'AaYouLongZeLingKeAiTi', 'Kalam', 'Ma Shan Zheng', 'Comic Sans MS', cursive; font-size: clamp(10px, .95vw, 11px); color: var(--mjb-muted); margin-top: 1px; font-weight: 800; text-shadow: 0 1px 1px rgba(255,255,255,.36); }
+.mjb-day.has-image .mjb-more { color: rgba(247,251,255,.96); text-shadow: 0 1px 2px rgba(0,0,0,.95), 0 0 1px rgba(0,0,0,.85); }
 .mjb-photo-count { position: absolute; top: 7px; right: 7px; z-index: 3; display: inline-flex; align-items: center; gap: 3px; padding: 3px 6px; border-radius: 999px; background: rgba(255,255,255,.68); color: #263347; font-size: 10px; font-weight: 800; box-shadow: 0 2px 10px rgba(0,0,0,.16); }
 .mjb-pop { display: none; position: fixed; left: 0; top: 0; width: clamp(240px, 30vw, 360px); max-height: min(420px, calc(100vh - 48px)); overflow: auto; padding: 12px; border-radius: 16px; background: rgba(28, 39, 31, .94); color: #fff; box-shadow: 0 18px 42px rgba(0,0,0,.25); backdrop-filter: blur(10px); z-index: 9999; }
 .mjb-pop.is-visible { display: block; }
@@ -1136,9 +1234,18 @@ async function render() {
   side.appendChild(sideHead);
   side.onclick = () => { if (state.sideHidden) { state.sideHidden = false; saveState(state); render(); } };
   const noteArea = make('textarea', 'mjb-note-area');
-  noteArea.placeholder = '本月随笔 / goals / notes…（保存在本机 Obsidian localStorage）';
-  noteArea.value = state.monthNotes[monthKey()] || '';
-  noteArea.oninput = () => { state.monthNotes[monthKey()] = noteArea.value; saveState(state); };
+  const notesYear = state.year;
+  const notesMonth = state.month;
+  const markdownNote = await readMonthMarkdownNote(notesYear, notesMonth);
+  noteArea.placeholder = markdownNotesEnabled()
+    ? '本月随笔 / goals / notes…（自动写入月记 Markdown）'
+    : '本月随笔 / goals / notes…（保存在本机 Obsidian localStorage）';
+  noteArea.value = markdownNote || state.monthNotes[monthKey(notesYear, notesMonth)] || '';
+  noteArea.oninput = () => {
+    state.monthNotes[monthKey(notesYear, notesMonth)] = noteArea.value;
+    saveState(state);
+    scheduleMonthMarkdownNoteSave(notesYear, notesMonth, noteArea.value);
+  };
   side.appendChild(noteArea);
   side.appendChild(make('div', 'mjb-detail'));
   main.appendChild(side);
