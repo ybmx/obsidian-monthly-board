@@ -4,7 +4,7 @@
 (function () {
 const DEFAULT_CONFIG = {
   stateKey: 'obsidian-monthly-journal-board:v1',
-  version: 'v2026-05-25 13:22 reading-mode-markdown-notes',
+  version: 'v2026-05-25 14:20 floating-panel',
   monthsCn: ['一月','二月','三月','四月','五月','六月','七月','八月','九月','十月','十一月','十二月'],
   monthsEn: ['January','February','March','April','May','June','July','August','September','October','November','December'],
   weekdays: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
@@ -32,7 +32,7 @@ const DEFAULT_CONFIG = {
   },
   theme: {
     handwritingFont: '数据/Attachments/fonts/AaYouLongZeLingKeAiTi-2.ttf',
-    options: [['garden','绿野'], ['paper','纸页'], ['night','夜空'], ['rose','玫瑰'], ['custom','自定背景']],
+    options: [['garden','绿野'], ['paper','纸页'], ['night','夜空'], ['rose','玫瑰'], ['ao3','AO3档案'], ['archive','青档案'], ['custom','自定背景']],
     backgroundPresets: [
       { name: 'winter', label: '冬夜', image: '![[数据/Attachments/monthly-backgrounds/A_refined_custom_background_fo_2026-05-23T22-07-49.png]]' },
     ],
@@ -55,6 +55,8 @@ async function renderMonthlyBoard(ctx = {}) {
   ROOT.classList?.add('monthly-journal-board');
   ROOT.style.width = '100%';
   ROOT.style.maxWidth = 'none';
+  ROOT.style.maxHeight = 'calc(100vh - 92px)';
+  ROOT.style.overflow = 'hidden';
   const previewSection = ROOT.closest?.('.markdown-preview-section');
   if (previewSection) { previewSection.style.maxWidth = 'none'; previewSection.style.width = '100%'; }
   const previewSizer = ROOT.closest?.('.markdown-preview-sizer');
@@ -90,12 +92,14 @@ let state = Object.assign({
   selectedDate: '',
   bg: '',
   monthNotes: {},
+  dayNotes: {},
   imageCovers: {},
   imageFocus: {},
   imageToolsOpen: {},
   hiddenGridItems: {},
 }, loadState());
 let monthMarkdownNoteTimer = 0;
+let dayMarkdownNoteTimer = 0;
 
 function pad(n) { return String(n).padStart(2, '0'); }
 function ymd(y, m, d) { return `${y}-${pad(m + 1)}-${pad(d)}`; }
@@ -203,6 +207,56 @@ function scheduleMonthMarkdownNoteSave(year, month, text) {
   clearTimeout(monthMarkdownNoteTimer);
   monthMarkdownNoteTimer = setTimeout(() => {
     writeMonthMarkdownNote(year, month, text).catch(err => console.error('Monthly Board note save failed:', err));
+  }, 650);
+}
+const DAY_NOTE_BEGIN = '<!-- MONTHLY-BOARD-DAY-NOTES:BEGIN -->';
+const DAY_NOTE_END = '<!-- MONTHLY-BOARD-DAY-NOTES:END -->';
+function dayNoteTargetPath(dateStr) {
+  const m = String(dateStr || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return '';
+  const year = m[1];
+  const monthNum = Number(m[2]);
+  const quarter = quarterFromMonth(monthNum - 1);
+  const monthName = MONTHS_CN[monthNum - 1];
+  if (!monthName) return '';
+  return normalizeVaultPath(`Journal/${year}/${year}-Q${quarter}/${monthName}, ${year}/${dateStr}.md`);
+}
+function extractMarkedDayNotes(raw) {
+  const start = String(raw || '').indexOf(DAY_NOTE_BEGIN);
+  const end = String(raw || '').indexOf(DAY_NOTE_END);
+  if (start < 0 || end < start) return '';
+  return String(raw || '').slice(start + DAY_NOTE_BEGIN.length, end).replace(/^\r?\n|\r?\n$/g, '');
+}
+async function readDayMarkdownNote(dateStr, existingPath = '') {
+  const path = normalizeVaultPath(existingPath || dayNoteTargetPath(dateStr));
+  const file = path ? app.vault.getAbstractFileByPath(path) : null;
+  if (!file) return '';
+  return extractMarkedDayNotes(await app.vault.read(file));
+}
+async function writeDayMarkdownNote(dateStr, existingPath, text) {
+  const path = normalizeVaultPath(existingPath || dayNoteTargetPath(dateStr));
+  if (!path) return;
+  const trimmed = String(text || '').trimEnd();
+  let file = app.vault.getAbstractFileByPath(path);
+  if (!file && !trimmed) return;
+  const block = `${DAY_NOTE_BEGIN}\n${trimmed}\n${DAY_NOTE_END}`;
+  if (!file) {
+    await ensureFolderForPath(path);
+    await app.vault.create(path, `---\ntags:\n  - journal/dailynote\ndate: ${dateStr}\nid: journal-${dateStr}\n---\n\n## Monthly Board Notes\n${block}\n`);
+    return;
+  }
+  const raw = await app.vault.read(file);
+  const start = raw.indexOf(DAY_NOTE_BEGIN);
+  const end = raw.indexOf(DAY_NOTE_END);
+  const next = start >= 0 && end >= start
+    ? raw.slice(0, start) + block + raw.slice(end + DAY_NOTE_END.length)
+    : raw.replace(/\s*$/, '') + `\n\n## Monthly Board Notes\n${block}\n`;
+  if (next !== raw) await app.vault.modify(file, next);
+}
+function scheduleDayMarkdownNoteSave(dateStr, existingPath, text) {
+  clearTimeout(dayMarkdownNoteTimer);
+  dayMarkdownNoteTimer = setTimeout(() => {
+    writeDayMarkdownNote(dateStr, existingPath, text).catch(err => console.error('Monthly Board daily note save failed:', err));
   }, 650);
 }
 function weekNotePath(info) {
@@ -524,6 +578,22 @@ function stabilizeCalendarGrid(root) {
     });
   });
 }
+function syncZoomViewportBounds(viewport, frameHeight = 0) {
+  if (!viewport) return;
+  const visual = window.visualViewport;
+  const visualHeight = Math.floor(visual?.height || window.innerHeight || document.documentElement.clientHeight || 720);
+  const top = Math.max(0, Math.floor(viewport.getBoundingClientRect?.().top || 0));
+  const available = Math.max(260, visualHeight - top - 8);
+  const targetHeight = frameHeight > 0 ? Math.min(frameHeight, available) : available;
+  viewport.style.maxHeight = `${available}px`;
+  viewport.style.height = `${targetHeight}px`;
+  const wrapper = viewport.parentElement;
+  if (wrapper?.classList?.contains('monthly-journal-board')) {
+    wrapper.style.maxHeight = `${available}px`;
+    wrapper.style.height = `${targetHeight}px`;
+    wrapper.style.overflow = 'hidden';
+  }
+}
 function applyBoardZoom(canvas, label, frame) {
   const boardZoom = clampZoom(state.zoom);
   const uiScale = obsidianUiScale();
@@ -554,10 +624,13 @@ function applyBoardZoom(canvas, label, frame) {
     const baseHeight = Math.max(1, Math.ceil(root?.scrollHeight || canvas.scrollHeight || canvas.offsetHeight || 1));
     canvas.style.height = `${baseHeight}px`;
     canvas.style.transform = `scale(${zoom})`;
+    let frameHeight = 0;
     if (frame) {
       frame.style.width = `${Math.ceil(baseWidth * zoom)}px`;
-      frame.style.height = `${Math.ceil(baseHeight * zoom)}px`;
+      frameHeight = Math.ceil(baseHeight * zoom);
+      frame.style.height = `${frameHeight}px`;
     }
+    syncZoomViewportBounds(viewport, frameHeight);
   }
   if (label) setText(label, zoomLabel());
 }
@@ -585,10 +658,20 @@ function installZoomGestures(viewport, canvas, label, frame) {
     if (ev.touches.length < 2) pinch = null;
   }, { passive: true });
   viewport.addEventListener('wheel', ev => {
-    if (!ev.ctrlKey) return;
+    if (ev.ctrlKey) {
+      ev.preventDefault();
+      const factor = ev.deltaY > 0 ? 0.92 : 1.08;
+      setBoardZoom(clampZoom(state.zoom) * factor, canvas, label, frame);
+      return;
+    }
+    const maxTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+    const maxLeft = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+    if (maxTop <= 1 && maxLeft <= 1) return;
+    const nextTop = Math.max(0, Math.min(maxTop, viewport.scrollTop + ev.deltaY));
+    const nextLeft = Math.max(0, Math.min(maxLeft, viewport.scrollLeft + ev.deltaX));
+    viewport.scrollTop = nextTop;
+    viewport.scrollLeft = nextLeft;
     ev.preventDefault();
-    const factor = ev.deltaY > 0 ? 0.92 : 1.08;
-    setBoardZoom(clampZoom(state.zoom) * factor, canvas, label, frame);
   }, { passive: false });
 }
 function installZoomResize(viewport, canvas, label, frame) {
@@ -600,6 +683,8 @@ function installZoomResize(viewport, canvas, label, frame) {
     if (!viewport.isConnected) {
       observer?.disconnect();
       window.removeEventListener('resize', refresh);
+      window.visualViewport?.removeEventListener('resize', refresh);
+      window.visualViewport?.removeEventListener('scroll', refresh);
       return;
     }
     const width = Math.round(viewport.clientWidth || 0);
@@ -622,6 +707,8 @@ function installZoomResize(viewport, canvas, label, frame) {
       .forEach(el => observer.observe(el));
   }
   window.addEventListener('resize', refresh, { passive: true });
+  window.visualViewport?.addEventListener('resize', refresh, { passive: true });
+  window.visualViewport?.addEventListener('scroll', refresh, { passive: true });
   refresh();
   setTimeout(refresh, 60);
   setTimeout(refresh, 180);
@@ -687,7 +774,8 @@ function installStyles() {
   const handFontFace = handFontUrl ? `@font-face { font-family: 'AaYouLongZeLingKeAiTi'; src: url('${handFontUrl}') format('truetype'); font-display: swap; }\n` : '';
   style.textContent = `
 @import url('https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Ma+Shan+Zheng&display=swap');
-${handFontFace}.monthly-journal-board .markdown-preview-section { max-width: 100% !important; }
+${handFontFace}.monthly-journal-board { display: block; max-height: calc(100vh - 92px); overflow: hidden; }
+.markdown-preview-section:has(.monthly-journal-board) { max-width: 100% !important; }
 .mjb-root {
   --mjb-side: ${Math.max(150, Number(state.sideWidth) || 300)}px;
   --mjb-ink: #213729;
@@ -726,6 +814,35 @@ ${handFontFace}.monthly-journal-board .markdown-preview-section { max-width: 100
 .mjb-root[data-theme="night"] .mjb-day:not(.has-image) .mjb-item { color: #f2f5ff; background: rgba(255,255,255,.16); }
 .mjb-root[data-theme="paper"] { --mjb-accent: #d7b16d; --mjb-accent-2: #c57f62; background: #fbf7ee; background-image: linear-gradient(rgba(85,70,45,.04) 1px, transparent 1px), linear-gradient(90deg, rgba(85,70,45,.035) 1px, transparent 1px); background-size: 28px 28px; }
 .mjb-root[data-theme="rose"] { --mjb-accent: #c78396; --mjb-accent-2: #9bbf88; --mjb-card: rgba(255, 252, 248, .84); --mjb-line: rgba(199,131,150,.22); background: #fff3f4; background-image: radial-gradient(circle at 90% 20%, rgba(199,131,150,.16), transparent 30%), radial-gradient(circle at 18% 88%, rgba(155,191,136,.16), transparent 30%); }
+.mjb-root[data-theme="ao3"] { --mjb-ink: #3a2e2a; --mjb-muted: #8B7E72; --mjb-accent: #E07A8F; --mjb-accent-2: #2C3E64; --mjb-card: rgba(255,253,250,.94); --mjb-line: rgba(120,90,80,.18); background: #FAF6F0; background-image: linear-gradient(180deg, #FAF6F0, #F5EFE7); box-shadow: 0 12px 40px rgba(80,50,40,.10); }
+.mjb-root[data-theme="ao3"] .mjb-side, .mjb-root[data-theme="ao3"] .mjb-note-area { background: rgba(255,253,250,.82); border-color: rgba(120,90,80,.22); }
+.mjb-root[data-theme="ao3"] .mjb-title,
+.mjb-root[data-theme="ao3"] .mjb-title-link,
+.mjb-root[data-theme="ao3"] .mjb-title-link:visited { color: #E07A8F !important; font-weight: 700; }
+.mjb-root[data-theme="ao3"] .mjb-month-tab { color: #C95C76; background: transparent; border: 1px solid rgba(120,90,80,.20); }
+.mjb-root[data-theme="ao3"] .mjb-month-tab:hover { background: rgba(224,122,143,.12); }
+.mjb-root[data-theme="ao3"] .mjb-month-tab.is-active { background: linear-gradient(90deg, #E07A8F, #C95C76); color: #ffffff; border-color: transparent; }
+.mjb-root[data-theme="ao3"] .mjb-item { background: rgba(60,42,38,.62); color: #ffffff; border-radius: 4px; }
+.mjb-root[data-theme="ao3"] .mjb-day.has-image .mjb-item { background: rgba(40,28,25,.58); color: #ffffff; }
+.mjb-root[data-theme="ao3"] .mjb-day:not(.has-image) .mjb-item { background: rgba(70,52,46,.75); color: #ffffff; border: none; }
+.mjb-root[data-theme="ao3"] .mjb-more { color: #ffffff; font-weight: 600; }
+.mjb-root[data-theme="ao3"] .mjb-day:not(.has-image) .mjb-more { color: #E07A8F; }
+.mjb-root[data-theme="ao3"] .mjb-photo-count { background: #E07A8F; color: #ffffff; box-shadow: 0 1px 4px rgba(60,30,20,.18); }
+.mjb-root[data-theme="ao3"] .mjb-date { background: linear-gradient(135deg, #F0B968, #E07A8F); color: #ffffff; box-shadow: 0 1px 4px rgba(60,30,20,.18); }
+.mjb-root[data-theme="ao3"] a { color: #C95C76; }
+.mjb-root[data-theme="ao3"] a:hover { color: #E07A8F; }
+.mjb-root[data-theme="ao3"] .mjb-detail h1,
+.mjb-root[data-theme="ao3"] .mjb-detail h2,
+.mjb-root[data-theme="ao3"] .mjb-detail h3,
+.mjb-root[data-theme="ao3"] .mjb-detail h4 { color: #E07A8F !important; }
+.mjb-root[data-theme="ao3"] .mjb-side h1,
+.mjb-root[data-theme="ao3"] .mjb-side h2,
+.mjb-root[data-theme="ao3"] .mjb-side h3,
+.mjb-root[data-theme="ao3"] .mjb-side h4 { color: #E07A8F !important; }
+.mjb-root[data-theme="archive"] { --mjb-ink: #384E39; --mjb-muted: rgba(56,78,57,.68); --mjb-accent: #7C8C65; --mjb-accent-2: #4F6550; --mjb-card: rgba(236,246,221,.76); --mjb-line: rgba(79,101,80,.26); background: #ECF6DD; background-image: radial-gradient(circle at 10% 8%, rgba(255,255,255,.72), transparent 24%), linear-gradient(180deg, rgba(236,246,221,.98), rgba(247,241,232,.78)), repeating-linear-gradient(0deg, rgba(79,101,80,.045) 0 1px, transparent 1px 34px); box-shadow: 0 18px 55px rgba(56,78,57,.16); }
+.mjb-root[data-theme="archive"] .mjb-side, .mjb-root[data-theme="archive"] .mjb-note-area { background: rgba(236,246,221,.58); border-color: rgba(79,101,80,.30); }
+.mjb-root[data-theme="archive"] .mjb-month-tab.is-active { background: linear-gradient(90deg, #7C8C65, #4F6550); color: #ECF6DD; }
+.mjb-root[data-theme="archive"] .mjb-day:hover { border-color: rgba(124,140,101,.62); box-shadow: 0 12px 28px rgba(56,78,57,.15); }
 .mjb-root[data-theme="custom"] { --mjb-ink: #f7fbff; --mjb-muted: rgba(247,251,255,.80); --mjb-accent: #e7f1ff; --mjb-accent-2: #a9d28f; --mjb-card: rgba(255,255,255,.16); --mjb-line: rgba(255,255,255,.30); background-image: var(--mjb-bg-image); background-size: cover; background-position: center; }
 .mjb-root[data-theme="custom"] .mjb-head { padding: 14px 16px; margin: -8px -8px 18px; border-radius: 26px; background: linear-gradient(90deg, rgba(7,14,24,.22), rgba(7,14,24,.10) 58%, transparent); }
 .mjb-root[data-theme="custom"] .mjb-title { color: #f4f8ff; text-shadow: 0 3px 14px rgba(0,0,0,.72), 0 0 2px rgba(0,0,0,.95); }
@@ -733,7 +850,7 @@ ${handFontFace}.monthly-journal-board .markdown-preview-section { max-width: 100
 .mjb-root[data-theme="custom"] .mjb-weekdays { color: rgba(247,251,255,.88); text-shadow: 0 2px 7px rgba(0,0,0,.72), 0 0 1px rgba(0,0,0,.9); }
 .mjb-root[data-theme="custom"] .mjb-month-tab { color: rgba(247,251,255,.88); background: rgba(15,27,43,.28); text-shadow: 0 1px 4px rgba(0,0,0,.45); }
 .mjb-root[data-theme="custom"] .mjb-month-tab.is-active { color: #19324a; background: rgba(238,247,255,.92); text-shadow: none; }
-.mjb-zoom-viewport { width: 100%; overflow: auto; touch-action: pan-x pan-y; overscroll-behavior: contain; scrollbar-gutter: stable; -webkit-overflow-scrolling: touch; }
+.mjb-zoom-viewport { width: 100%; max-height: calc(100vh - 92px); overflow: auto; touch-action: pan-x pan-y; overscroll-behavior: contain; scrollbar-gutter: stable; -webkit-overflow-scrolling: touch; }
 .mjb-zoom-toolbar { position: sticky; top: 0; left: 0; z-index: 30; display: flex; justify-content: flex-end; width: 100%; box-sizing: border-box; padding: 0 0 8px; pointer-events: none; }
 .mjb-zoom-toolbar .mjb-zoom-controls { pointer-events: auto; }
 .mjb-zoom-frame { position: relative; }
@@ -782,13 +899,6 @@ a.mjb-date:hover { filter: brightness(1.06); transform: translateY(-1px); }
 .mjb-more { font-family: 'AaYouLongZeLingKeAiTi', 'Kalam', 'Ma Shan Zheng', 'Comic Sans MS', cursive; font-size: clamp(10px, .95vw, 11px); color: var(--mjb-muted); margin-top: 1px; font-weight: 800; text-shadow: 0 1px 1px rgba(255,255,255,.36); }
 .mjb-day.has-image .mjb-more { color: rgba(247,251,255,.96); text-shadow: 0 1px 2px rgba(0,0,0,.95), 0 0 1px rgba(0,0,0,.85); }
 .mjb-photo-count { position: absolute; top: 7px; right: 7px; z-index: 3; display: inline-flex; align-items: center; gap: 3px; padding: 3px 6px; border-radius: 999px; background: rgba(255,255,255,.68); color: #263347; font-size: 10px; font-weight: 800; box-shadow: 0 2px 10px rgba(0,0,0,.16); }
-.mjb-pop { display: none; position: fixed; left: 0; top: 0; width: clamp(240px, 30vw, 360px); max-height: min(420px, calc(100vh - 48px)); overflow: auto; padding: 12px; border-radius: 16px; background: rgba(28, 39, 31, .94); color: #fff; box-shadow: 0 18px 42px rgba(0,0,0,.25); backdrop-filter: blur(10px); z-index: 9999; }
-.mjb-pop.is-visible { display: block; }
-.mjb-pop-title { font-weight: 800; margin-bottom: 7px; }
-.mjb-pop ul { margin: 0; padding-left: 18px; }
-.mjb-pop li { margin: 4px 0; font-size: 12px; }
-.mjb-pop p { margin: 8px 0 0; font-size: 12px; color: rgba(255,255,255,.82); }
-.mjb-pop a { color: #d9f1ff !important; }
 .mjb-resizer { border-radius: 999px; background: linear-gradient(var(--mjb-line), var(--mjb-accent), var(--mjb-line)); opacity: .45; cursor: col-resize; }
 .mjb-root[data-side-hidden="true"] .mjb-resizer { opacity: 0; pointer-events: none; }
 .mjb-side { min-width: 0; height: min(76vh, 720px); max-height: min(76vh, 720px); box-sizing: border-box; position: sticky; top: 12px; display: flex; flex-direction: column; border: 1px solid var(--mjb-line); border-radius: 24px; padding: 16px; background: rgba(255,255,255,.46); backdrop-filter: blur(12px); overflow: hidden; transition: padding .18s ease, border-radius .18s ease, background .18s ease; }
@@ -831,7 +941,25 @@ a.mjb-date:hover { filter: brightness(1.06); transform: translateY(-1px); }
 .mjb-open-message { margin: 8px 0 0; padding: 8px 10px; border-radius: 12px; background: rgba(255,255,255,.38); color: var(--mjb-muted); font-size: 12px; white-space: pre-wrap; }
 .mjb-open-message.is-error { color: #8a2f2f; background: rgba(255, 228, 228, .72); }
 @container mjb-board (max-width: 720px) {
+  .mjb-root { padding: 16px; border-radius: 22px; min-height: 0; }
+  .mjb-head { gap: 10px; margin-bottom: 12px; }
+  .mjb-title { font-size: clamp(30px, 10cqi, 56px); }
+  .mjb-subtitle { font-size: 10px; letter-spacing: .12em; }
+  .mjb-controls { gap: 5px; }
+  .mjb-controls button, .mjb-controls select, .mjb-controls input { padding: 5px 8px; font-size: 10px; }
+  .mjb-month-tabs { gap: 4px; margin-bottom: 12px; }
+  .mjb-month-tab { padding: 4px 7px; font-size: 11px; }
   .mjb-main { grid-template-columns: minmax(0, 1fr) 6px clamp(132px, 27%, 180px); gap: 8px; }
+  .mjb-weekdays { gap: 4px; margin-bottom: 6px; font-size: clamp(8px, 2.2cqi, 11px); letter-spacing: .08em; }
+  .mjb-weekdays > div { padding-bottom: 5px; }
+  .mjb-grid { gap: 4px; }
+  .mjb-day { padding: 4px; border-radius: 12px; min-height: 34px; }
+  .mjb-date { top: 4px; left: 4px; min-width: 18px; height: 18px; font-size: 9px; }
+  .mjb-week-chip { top: 24px; left: 4px; padding: 0 3px; font-size: 7px; }
+  .mjb-photo-count { top: 4px; right: 4px; gap: 1px; padding: 2px 4px; font-size: 8px; }
+  .mjb-items { left: 4px; right: 4px; bottom: 4px; gap: 1px; }
+  .mjb-item { font-size: clamp(6px, 1.4cqi, 9px); line-height: 1.18; border-radius: 6px; padding: 1px 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.2px; }
+  .mjb-more { font-size: clamp(6px, 1.3cqi, 8px); line-height: 1.15; }
   .mjb-side { height: min(70vh, 560px); max-height: min(70vh, 560px); padding: 10px; border-radius: 18px; }
   .mjb-side h3 { font-size: 20px; }
   .mjb-side-toggle { padding: 4px 7px; }
@@ -842,7 +970,22 @@ a.mjb-date:hover { filter: brightness(1.06); transform: translateY(-1px); }
   .mjb-photo-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @container mjb-board (max-width: 560px) {
+  .mjb-root { padding: 10px; border-radius: 18px; }
+  .mjb-head { align-items: flex-start; }
+  .mjb-title { font-size: clamp(26px, 12cqi, 42px); letter-spacing: -1px; }
+  .mjb-subtitle { font-size: 9px; letter-spacing: .08em; }
+  .mjb-controls input { min-width: 120px; }
+  .mjb-month-tab { padding: 3px 6px; font-size: 10px; }
   .mjb-main { grid-template-columns: minmax(0, 1fr) 5px clamp(112px, 24%, 140px); gap: 6px; }
+  .mjb-weekdays { gap: 3px; font-size: 7px; letter-spacing: .04em; }
+  .mjb-grid { gap: 3px; }
+  .mjb-day { padding: 3px; border-radius: 10px; min-height: 30px; }
+  .mjb-date { top: 3px; left: 3px; min-width: 15px; height: 15px; font-size: 8px; box-shadow: 0 1px 5px rgba(0,0,0,.18); }
+  .mjb-week-chip { display: none; }
+  .mjb-photo-count { top: 3px; right: 3px; padding: 1px 3px; font-size: 7px; }
+  .mjb-items { left: 3px; right: 3px; bottom: 3px; }
+  .mjb-item { font-size: 6px; line-height: 1.14; padding: 1px 2px; border-radius: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.2px; }
+  .mjb-more { font-size: 6px; line-height: 1.1; }
   .mjb-side { padding: 8px; border-radius: 16px; }
   .mjb-side h3 { font-size: 18px; }
   .mjb-note-area { min-height: 52px; max-height: 76px; padding: 8px; }
@@ -851,7 +994,8 @@ a.mjb-date:hover { filter: brightness(1.06); transform: translateY(-1px); }
   .mjb-photo-tools { display: none; }
   .mjb-open-note { width: 15px; height: 15px; margin-left: 5px; font-size: 11px; }
 }
-@media (max-width: 920px) { .mjb-main, .mjb-root[data-side-hidden="true"] .mjb-main { grid-template-columns: 1fr; } .mjb-resizer { display:none; } .mjb-side { position: static; height: auto; max-height: none; overflow: visible; } .mjb-detail { overflow: visible; flex: 0 0 auto; max-height: none; } .mjb-side.is-collapsed { width: auto; min-height: 44px; align-items: stretch; } .mjb-side.is-collapsed .mjb-side-head { writing-mode: horizontal-tb; } .mjb-grid { grid-auto-rows: minmax(100px, auto); } }
+@container mjb-board (max-width: 920px) { .mjb-main, .mjb-root[data-side-hidden="true"] .mjb-main { grid-template-columns: 1fr; } .mjb-resizer { display:none; } .mjb-side { position: static; height: auto; max-height: min(52vh, 460px); overflow: hidden; } .mjb-detail { overflow: auto; flex: 1 1 auto; min-height: 0; max-height: none; } .mjb-side.is-collapsed { width: auto; min-height: 44px; max-height: none; align-items: stretch; } .mjb-side.is-collapsed .mjb-side-head { writing-mode: horizontal-tb; } .mjb-grid { grid-auto-rows: minmax(100px, auto); } }
+@media (max-width: 920px) { .mjb-main, .mjb-root[data-side-hidden="true"] .mjb-main { grid-template-columns: 1fr; } .mjb-resizer { display:none; } .mjb-side { position: static; height: auto; max-height: min(52vh, 460px); overflow: hidden; } .mjb-detail { overflow: auto; flex: 1 1 auto; min-height: 0; max-height: none; } .mjb-side.is-collapsed { width: auto; min-height: 44px; max-height: none; align-items: stretch; } .mjb-side.is-collapsed .mjb-side-head { writing-mode: horizontal-tb; } .mjb-grid { grid-auto-rows: minmax(100px, auto); } }
 `;
   document.head.appendChild(style);
 }
@@ -885,55 +1029,6 @@ function configureInternalLink(el, pathText) {
     app.workspace.openLinkText(cleanPath, dv.current().file.path, false);
   };
   return el;
-}
-
-function fillPopover(pop, info, dateStr) {
-  pop.textContent = '';
-  pop.appendChild(make('div', 'mjb-pop-title', dateStr));
-  const ul = make('ul');
-  for (const item of info.entries || []) {
-    const li = make('li');
-    setText(li, `${item.time ? item.time + ' · ' : ''}${item.title}`);
-    if (safeUrl(item.url)) {
-      li.appendChild(document.createTextNode(' '));
-      const a = make('a', '', '↗');
-      a.href = safeUrl(item.url);
-      li.appendChild(a);
-    }
-    ul.appendChild(li);
-  }
-  pop.appendChild(ul);
-  if (info.essay) pop.appendChild(make('p', '', info.essay));
-}
-
-function placePopover(pop, card) {
-  const margin = 18;
-  const gap = 12;
-  const boundsRect = card.closest('.mjb-calendar')?.getBoundingClientRect()
-    || card.closest('.mjb-root')?.getBoundingClientRect()
-    || { left: margin, right: window.innerWidth - margin, top: margin, bottom: window.innerHeight - margin, width: window.innerWidth - margin * 2 };
-  const cardRect = card.getBoundingClientRect();
-  const boundLeft = Math.max(margin, boundsRect.left + margin);
-  const boundRight = Math.min(window.innerWidth - margin, boundsRect.right - margin);
-  const boundTop = Math.max(margin, boundsRect.top + margin);
-  const boundBottom = Math.min(window.innerHeight - margin, boundsRect.bottom - margin);
-  const availableWidth = Math.max(220, boundRight - boundLeft);
-  pop.style.width = `${Math.min(340, Math.max(230, availableWidth * 0.5))}px`;
-  const popRect = pop.getBoundingClientRect();
-
-  const spaces = [
-    { left: cardRect.right + gap, room: boundRight - (cardRect.right + gap), align: 'right' },
-    { left: cardRect.left - popRect.width - gap, room: cardRect.left - gap - boundLeft, align: 'left' },
-  ].sort((a, b) => b.room - a.room);
-  let left = spaces[0].room >= popRect.width ? spaces[0].left : cardRect.left + cardRect.width / 2 - popRect.width / 2;
-  left = Math.min(Math.max(left, boundLeft), boundRight - popRect.width);
-
-  let top = cardRect.top + cardRect.height / 2 - popRect.height / 2;
-  if (top + popRect.height > boundBottom) top = boundBottom - popRect.height;
-  if (top < boundTop) top = boundTop;
-
-  pop.style.left = `${Math.round(left)}px`;
-  pop.style.top = `${Math.round(top)}px`;
 }
 
 function renderDetail(side, data, dateStr) {
@@ -1085,6 +1180,26 @@ async function render() {
   const monthData = await loadMonthData(state.year, state.month);
   if (!state.selectedDate || !state.selectedDate.startsWith(monthKey())) state.selectedDate = ymd(state.year, state.month, 1);
 
+  let noteArea = null;
+  const loadDayNoteIntoArea = async dateStr => {
+    if (!noteArea || !dateStr) return;
+    noteArea.dataset.date = dateStr;
+    noteArea.placeholder = `${dateStr} 的日记备注…（自动写入 daily note）`;
+    const day = monthData.get(dateStr);
+    const markdownNote = await readDayMarkdownNote(dateStr, day?.path);
+    if (!noteArea || noteArea.dataset.date !== dateStr) return;
+    const legacyKey = monthKey(state.year, state.month);
+    if (!state.dayNotes) state.dayNotes = {};
+    if (!state.dayNotes[dateStr] && state.monthNotes?.[legacyKey]) {
+      state.dayNotes[dateStr] = state.monthNotes[legacyKey];
+      delete state.monthNotes[legacyKey];
+      saveState(state);
+    }
+    const fallback = state.dayNotes?.[dateStr] || '';
+    noteArea.value = markdownNote || fallback;
+    if (!markdownNote && fallback) scheduleDayMarkdownNoteSave(dateStr, day?.path, fallback);
+  };
+
   const root = make('div', 'mjb-root');
   root.dataset.theme = state.theme;
   root.dataset.sideHidden = state.sideHidden ? 'true' : 'false';
@@ -1178,7 +1293,8 @@ async function render() {
       const dateStr = ymd(state.year, state.month, dayNum);
       const info = monthData.get(dateStr);
       const card = make('article', `mjb-day${info?.image ? ' has-image' : ''}${state.selectedDate === dateStr ? ' is-selected' : ''}`);
-      card.onclick = () => { state.selectedDate = dateStr; saveState(state); renderDetail(side, monthData, dateStr); grid.querySelectorAll('.mjb-day').forEach(el => el.classList.remove('is-selected')); card.classList.add('is-selected'); };
+      card.dataset.date = dateStr;
+      card.onclick = () => { state.selectedDate = dateStr; saveState(state); loadDayNoteIntoArea(dateStr); renderDetail(side, monthData, dateStr); grid.querySelectorAll('.mjb-day').forEach(el => el.classList.remove('is-selected')); card.classList.add('is-selected'); };
       card.ondblclick = ev => { if (info?.path) { ev.preventDefault(); ev.stopPropagation(); app.workspace.openLinkText(info.path, dv.current().file.path, false); } };
       const dateBadge = make(info?.path ? 'a' : 'div', info?.path ? 'internal-link mjb-date' : 'mjb-date', dayNum);
       if (info?.path) {
@@ -1233,20 +1349,18 @@ async function render() {
   sideHead.appendChild(sideToggle);
   side.appendChild(sideHead);
   side.onclick = () => { if (state.sideHidden) { state.sideHidden = false; saveState(state); render(); } };
-  const noteArea = make('textarea', 'mjb-note-area');
-  const notesYear = state.year;
-  const notesMonth = state.month;
-  const markdownNote = await readMonthMarkdownNote(notesYear, notesMonth);
-  noteArea.placeholder = markdownNotesEnabled()
-    ? '本月随笔 / goals / notes…（自动写入月记 Markdown）'
-    : '本月随笔 / goals / notes…（保存在本机 Obsidian localStorage）';
-  noteArea.value = markdownNote || state.monthNotes[monthKey(notesYear, notesMonth)] || '';
+  noteArea = make('textarea', 'mjb-note-area');
+  noteArea.placeholder = '选择一天后在这里写 daily note 备注…';
   noteArea.oninput = () => {
-    state.monthNotes[monthKey(notesYear, notesMonth)] = noteArea.value;
+    const dateStr = noteArea.dataset.date || state.selectedDate;
+    if (!dateStr) return;
+    if (!state.dayNotes) state.dayNotes = {};
+    state.dayNotes[dateStr] = noteArea.value;
     saveState(state);
-    scheduleMonthMarkdownNoteSave(notesYear, notesMonth, noteArea.value);
+    scheduleDayMarkdownNoteSave(dateStr, monthData.get(dateStr)?.path, noteArea.value);
   };
   side.appendChild(noteArea);
+  loadDayNoteIntoArea(state.selectedDate);
   side.appendChild(make('div', 'mjb-detail'));
   main.appendChild(side);
   root.appendChild(main);

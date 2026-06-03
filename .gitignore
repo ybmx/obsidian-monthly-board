@@ -1,0 +1,12 @@
+# Editor / tooling
+.vscode/
+.codebuddy/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local dev sync helpers (path-specific, not for distribution)
+sync-to-vault.ps1
+watch-sync-to-vault.ps1

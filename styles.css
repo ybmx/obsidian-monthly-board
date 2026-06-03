@@ -1,1 +1,13 @@
 /* Monthly Board plugin shell styles are injected by the renderer. */
+
+/* Fallback loaded by Obsidian from the plugin stylesheet: respond to the board container width, not the whole app window. */
+@container mjb-board (max-width: 920px) {
+  .mjb-main,
+  .mjb-root[data-side-hidden="true"] .mjb-main { grid-template-columns: 1fr !important; }
+  .mjb-resizer { display: none !important; }
+  .mjb-side { position: static !important; height: auto !important; max-height: none !important; overflow: visible !important; }
+  .mjb-detail { overflow: visible !important; flex: 0 0 auto !important; max-height: none !important; }
+  .mjb-side.is-collapsed { width: auto !important; min-height: 44px !important; align-items: stretch !important; }
+  .mjb-side.is-collapsed .mjb-side-head { writing-mode: horizontal-tb !important; }
+  .mjb-grid { grid-auto-rows: minmax(100px, auto) !important; }
+}

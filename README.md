@@ -20,6 +20,9 @@ The plugin is especially useful if your vault contains date-based notes from dif
 - Keep UI state locally, including selected month, theme, side panel width, cover choices, and custom background.
 - Support custom handwriting fonts and background presets.
 - Use a responsive layout that compresses the side panel on narrow panes.
+- Open an external floating monthly board window from Obsidian.
+- Refresh the external board manually or when the entry note/config changes.
+- Persist external window size, position, compact display options, and always-on-top preference.
 
 ## Requirements
 
@@ -84,6 +87,44 @@ config: _tools/monthly-board/monthly-board.config.json
 ````
 
 The `config` path must be a relative `.json` file inside the current vault.
+
+## External floating monthly board
+
+The recommended floating-window path is the built-in external window command. It does not require installing another Obsidian plugin. The window is opened by the Obsidian client, can sit outside the main Obsidian workspace, and reuses the existing `monthly-board` entry note and vault-relative JSON config.
+
+### Preflight checks
+
+Use the Obsidian command palette:
+
+1. Run `Inspect monthly board entry` to verify that Monthly Board can find the note containing the `monthly-board` code block and its config path.
+2. Run `Check monthly board window options` to see whether the current environment supports in-app floating, external window opening, native always-on-top, and fallback guidance.
+3. Run `Validate external monthly board compatibility` to check Windows compatibility, config readability, refresh listeners, saved bounds, display options, and fallback behavior.
+
+### Open and refresh
+
+- Run `Open external floating monthly board` to open the external calendar window.
+- Run `Refresh external floating monthly board` to reload the external window manually.
+- Use the `刷新` button in the external window header for an in-window manual refresh.
+- When the source entry note or JSON config is modified, deleted, or renamed, the external window attempts to refresh and shows a status message.
+- Closing the external window does not close or modify the original Obsidian note.
+
+### External window settings
+
+Open the `Monthly Board` settings tab to adjust:
+
+- `External window size`: initial or last saved size for the external window.
+- `Prefer always on top`: tries native always-on-top first. If unavailable on Windows, use PowerToys Always on Top with `Win+Ctrl+T`.
+- `Compact external window`: hides non-essential Monthly Board chrome where possible.
+- `Minimal external header`: shrinks the external header so the calendar has more room.
+- `Light borderless external style`: reduces visual frame and background chrome. This is a visual style, not a native OS frameless window.
+- `External window opacity`: visual background opacity from `55` to `100`.
+
+### Known limitations
+
+- The external window is still created by Obsidian/Electron; it is not a separate native desktop app.
+- Native always-on-top support depends on whether the current Obsidian/Electron runtime exposes the required API. If not, use an OS-level window pinning tool.
+- The plugin only reads vault-relative `.json` config files and does not execute config code.
+- If the source note or config becomes unavailable, the external window shows an error/status message instead of modifying notes.
 
 ## Minimal config example
 
@@ -179,6 +220,7 @@ The preview image in this README is an anonymized mock screenshot. It does not c
 - It does not access tokens or external service credentials.
 - It does not write to Notion or any remote service.
 - It uses Dataview only to read pages from the current vault.
+- External floating windows are opened locally by the Obsidian client; no remote service is contacted for this feature.
 
 ## License
 
