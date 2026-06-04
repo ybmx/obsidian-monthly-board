@@ -1,6 +1,7 @@
 # Monthly Board
 
-![Monthly Board preview](assets/monthly-board-empty-preview.png)
+<img width="2462" height="1611" alt="image" src="https://github.com/user-attachments/assets/ae8f5961-dcb4-4fd9-9f83-d9701265ce20" />
+
 
 Monthly Board is a configurable Obsidian calendar board for people who want a visual monthly overview of journals, tasks, clippings, project notes, and photos.
 
