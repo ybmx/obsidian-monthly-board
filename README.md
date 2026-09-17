@@ -198,9 +198,45 @@ Optional visual configuration.
   "handwritingFont": "Attachments/fonts/my-font.ttf",
   "backgroundPresets": [
     { "name": "winter", "label": "Winter", "image": "![[winter-background.png]]" }
+  ],
+  "customThemes": [
+    {
+      "id": "ocean",
+      "label": "Ocean",
+      "ink": "#13405a",
+      "muted": "rgba(19,64,90,.6)",
+      "accent": "#3b8fb0",
+      "accent2": "#e0a96d",
+      "card": "rgba(240,250,255,.84)",
+      "line": "rgba(59,143,176,.28)",
+      "background": "#dff1f7"
+    }
   ]
 }
 ```
+
+#### `customThemes` — DIY themes without touching code
+
+Add your own themes by appending objects to `customThemes`. Each new theme is
+auto-injected as CSS **and** auto-added to the in-board theme dropdown, so you
+never have to edit `main.js`. Fields:
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `id` | yes | Unique theme key (letters/digits); also the dropdown value |
+| `label` | no | Display name in the dropdown (defaults to `id`) |
+| `ink` | no | Primary text color |
+| `muted` | no | Secondary / muted text color |
+| `accent` | no | Accent color (date chips, active tab) |
+| `accent2` | no | Secondary accent (selection outline, etc.) |
+| `card` | no | Calendar cell background |
+| `line` | no | Border / divider color |
+| `background` | no | Whole-board background (CSS `background` shorthand — solid or gradient) |
+| `backgroundImage` | no | Standalone `background-image` (use instead of `background` if preferred) |
+| `extraCss` | no | Advanced: raw CSS appended verbatim, e.g. `.mjb-root[data-theme="ocean"] .mjb-side { ... }` to override any detail |
+
+Any omitted color falls back to the default (garden) value, so a minimal theme
+only needs `id` plus the few colors you want to change.
 
 ## Image detection
 

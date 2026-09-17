@@ -79,7 +79,8 @@ function getSafeExternalWindowBounds(settings) {
   return { width, height, left, top };
 }
 
-function createMonthlyBoardRenderer() {  const module = { exports: {} };
+function createMonthlyBoardRenderer() {
+  const module = { exports: {} };
   const exports = module.exports;
 
 const DEFAULT_CONFIG = {
@@ -150,7 +151,12 @@ async function renderMonthlyBoard(ctx = {}) {
   const WEEKDAYS = config.weekdays || DEFAULT_CONFIG.weekdays;
   const DATE_FIELDS = config.dateFields || DEFAULT_CONFIG.dateFields;
   const SOURCE_CONFIGS = config.sources || DEFAULT_CONFIG.sources;
-  const THEME_OPTIONS = config.theme?.options || DEFAULT_CONFIG.theme.options;
+  const CUSTOM_THEMES = (Array.isArray(config.theme?.customThemes) ? config.theme.customThemes : [])
+    .filter(t => t && /^[a-zA-Z0-9-]+$/.test(String(t.id || '')));
+  const THEME_OPTIONS = [
+    ...(config.theme?.options || DEFAULT_CONFIG.theme.options),
+    ...CUSTOM_THEMES.map(t => [String(t.id), String(t.label || t.id)]),
+  ];
   const BACKGROUND_PRESETS = config.theme?.backgroundPresets || [];
   const DAILY_FILE_RE = new RegExp(config.journal?.dailyFilePattern || DEFAULT_CONFIG.journal.dailyFilePattern);
 
@@ -624,15 +630,6 @@ function setGridHidden(item, hidden) {
   else delete state.hiddenGridItems[key];
   saveState(state);
 }
-function areGridItemsHidden(items) {
-  const list = (items || []).filter(Boolean);
-  return list.length > 0 && list.every(item => isGridHidden(item));
-}
-function setGridItemsHidden(items, hidden) {
-  const list = (items || []).filter(Boolean);
-  if (!list.length) return;
-  for (const item of list) setGridHidden(item, hidden);
-}
 function clampZoom(value) {
   const zoom = Number(value);
   return Math.max(1, Math.min(2.4, Number.isFinite(zoom) ? zoom : 1));
@@ -646,6 +643,9 @@ function obsidianUiScale() {
   const raw = styles.getPropertyValue('--font-ui-medium') || styles.getPropertyValue('--font-text-size') || styles.fontSize || '15px';
   const px = Number.parseFloat(raw);
   return Math.max(0.75, Math.min(1.35, Number.isFinite(px) ? px / 15 : 1));
+}
+function isMobileView() {
+  return !!(document.body?.classList?.contains('is-mobile'));
 }
 function touchDistance(touches) {
   if (!touches || touches.length < 2) return 0;
@@ -673,31 +673,21 @@ function syncZoomViewportBounds(viewport, frameHeight = 0) {
   const visualHeight = Math.floor(visual?.height || window.innerHeight || document.documentElement.clientHeight || 720);
   const top = Math.max(0, Math.floor(viewport.getBoundingClientRect?.().top || 0));
   const available = Math.max(260, visualHeight - top - 8);
-  // 视口始终铺满可用高度（看板已 contain-fit 居中其中），既填满 OB 阅读区又不截断；
-  // 用户放大到超出时由 overflow:auto 提供滚动。
+  const targetHeight = frameHeight > 0 ? Math.min(frameHeight, available) : available;
   viewport.style.maxHeight = `${available}px`;
-  viewport.style.height = `${available}px`;
+  viewport.style.height = `${targetHeight}px`;
   const wrapper = viewport.parentElement;
   if (wrapper?.classList?.contains('monthly-journal-board')) {
     wrapper.style.maxHeight = `${available}px`;
-    wrapper.style.height = `${available}px`;
+    wrapper.style.height = `${targetHeight}px`;
     wrapper.style.overflow = 'hidden';
   }
 }
-// 测量看板可用的渲染高度：可视高度 - 视口顶端位置 - 顶部工具条（sticky）- 余量。
-function measureBoardAvailableHeight(viewport) {
-  if (!viewport) return 0;
-  const visual = window.visualViewport;
-  const visualHeight = Math.floor(visual?.height || window.innerHeight || document.documentElement.clientHeight || 720);
-  const top = Math.max(0, Math.floor(viewport.getBoundingClientRect?.().top || 0));
-  const available = Math.max(200, visualHeight - top - 8);
-  const toolbar = viewport.querySelector?.('.mjb-zoom-toolbar');
-  const toolbarH = toolbar ? Math.ceil(toolbar.getBoundingClientRect?.().height || toolbar.offsetHeight || 0) : 0;
-  return Math.max(120, available - toolbarH);
-}
 function applyBoardZoom(canvas, label, frame) {
   const boardZoom = clampZoom(state.zoom);
-  const uiScale = obsidianUiScale();
+  // 手机端不做 uiScale 补偿：移动端 UI 字号偏大，先缩排版再放大画布会导致又小又糊
+  const uiScale = isMobileView() ? 1 : obsidianUiScale();
+  const zoom = boardZoom * uiScale;
   if (canvas) {
     const viewport = frame?.parentElement || canvas.parentElement;
     const measuredWidth = Math.floor(viewport?.clientWidth || viewport?.getBoundingClientRect?.().width || 0);
@@ -723,26 +713,12 @@ function applyBoardZoom(canvas, label, frame) {
     stabilizeCalendarGrid(root);
     const baseHeight = Math.max(1, Math.ceil(root?.scrollHeight || canvas.scrollHeight || canvas.offsetHeight || 1));
     canvas.style.height = `${baseHeight}px`;
-    // contain-fit：宽、高都要放得下，取较小的缩放，保证整块看板完整显示、不被截断。
-    // boardZoom 作为用户在「适应屏幕」基础上的额外倍数（默认 1 = 刚好铺满可用区）。
-    const availForFrame = measureBoardAvailableHeight(viewport);
-    const widthScale = uiScale;                                              // 铺满宽度所需缩放
-    const heightScale = availForFrame > 0 ? availForFrame / baseHeight : widthScale; // 铺满高度所需缩放
-    const fitScale = Math.max(0.05, Math.min(widthScale, heightScale));
-    const zoom = fitScale * boardZoom;
     canvas.style.transform = `scale(${zoom})`;
     let frameHeight = 0;
     if (frame) {
-      const dispWidth = Math.ceil(baseWidth * zoom);
-      frame.style.width = `${dispWidth}px`;
+      frame.style.width = `${Math.ceil(baseWidth * zoom)}px`;
       frameHeight = Math.ceil(baseHeight * zoom);
       frame.style.height = `${frameHeight}px`;
-      // 水平居中；可用区还有富余则垂直居中，超出（用户放大）则顶对齐靠滚动查看。
-      frame.style.marginLeft = 'auto';
-      frame.style.marginRight = 'auto';
-      const slack = availForFrame - frameHeight;
-      frame.style.marginTop = slack > 0 ? `${Math.floor(slack / 2)}px` : '0px';
-      frame.style.marginBottom = '0px';
     }
     syncZoomViewportBounds(viewport, frameHeight);
   }
@@ -886,6 +862,16 @@ function installStyles() {
   const handFontFile = app.vault.getAbstractFileByPath(HAND_FONT_PATH);
   const handFontUrl = handFontFile ? app.vault.getResourcePath(handFontFile) : '';
   const handFontFace = handFontUrl ? `@font-face { font-family: 'AaYouLongZeLingKeAiTi'; src: url('${handFontUrl}') format('truetype'); font-display: swap; }\n` : '';
+  const sanitizeCssValue = v => String(v || '').replace(/[;{}]/g, '').trim();
+  const customThemeCss = CUSTOM_THEMES.map(t => {
+    const vars = [['ink', '--mjb-ink'], ['muted', '--mjb-muted'], ['accent', '--mjb-accent'], ['accent2', '--mjb-accent-2'], ['card', '--mjb-card'], ['line', '--mjb-line']]
+      .filter(([key]) => t[key])
+      .map(([key, cssVar]) => `${cssVar}: ${sanitizeCssValue(t[key])}`)
+      .join('; ');
+    const bg = t.background ? ` background: ${sanitizeCssValue(t.background)};` : '';
+    const extra = t.extraCss ? `\n${String(t.extraCss)}` : '';
+    return `.mjb-root[data-theme="${t.id}"] { ${vars};${bg} }${extra}`;
+  }).join('\n');
   style.textContent = `
 @import url('https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Ma+Shan+Zheng&display=swap');
 ${handFontFace}.monthly-journal-board { display: block; max-height: calc(100vh - 92px); overflow: hidden; }
@@ -928,31 +914,15 @@ ${handFontFace}.monthly-journal-board { display: block; max-height: calc(100vh -
 .mjb-root[data-theme="night"] .mjb-day:not(.has-image) .mjb-item { color: #f2f5ff; background: rgba(255,255,255,.16); }
 .mjb-root[data-theme="paper"] { --mjb-accent: #d7b16d; --mjb-accent-2: #c57f62; background: #fbf7ee; background-image: linear-gradient(rgba(85,70,45,.04) 1px, transparent 1px), linear-gradient(90deg, rgba(85,70,45,.035) 1px, transparent 1px); background-size: 28px 28px; }
 .mjb-root[data-theme="rose"] { --mjb-accent: #c78396; --mjb-accent-2: #9bbf88; --mjb-card: rgba(255, 252, 248, .84); --mjb-line: rgba(199,131,150,.22); background: #fff3f4; background-image: radial-gradient(circle at 90% 20%, rgba(199,131,150,.16), transparent 30%), radial-gradient(circle at 18% 88%, rgba(155,191,136,.16), transparent 30%); }
-.mjb-root[data-theme="ao3"] { --mjb-ink: #3a2e2a; --mjb-muted: #8B7E72; --mjb-accent: #E07A8F; --mjb-accent-2: #2C3E64; --mjb-card: rgba(255,253,250,.94); --mjb-line: rgba(120,90,80,.18); background: #FAF6F0; background-image: linear-gradient(180deg, #FAF6F0, #F5EFE7); box-shadow: 0 12px 40px rgba(80,50,40,.10); }
-.mjb-root[data-theme="ao3"] .mjb-side, .mjb-root[data-theme="ao3"] .mjb-note-area { background: rgba(255,253,250,.82); border-color: rgba(120,90,80,.22); }
-.mjb-root[data-theme="ao3"] .mjb-title,
-.mjb-root[data-theme="ao3"] .mjb-title-link,
-.mjb-root[data-theme="ao3"] .mjb-title-link:visited { color: #E07A8F !important; font-weight: 700; }
-.mjb-root[data-theme="ao3"] .mjb-month-tab { color: #C95C76; background: transparent; border: 1px solid rgba(120,90,80,.20); }
-.mjb-root[data-theme="ao3"] .mjb-month-tab:hover { background: rgba(224,122,143,.12); }
-.mjb-root[data-theme="ao3"] .mjb-month-tab.is-active { background: linear-gradient(90deg, #E07A8F, #C95C76); color: #ffffff; border-color: transparent; }
-.mjb-root[data-theme="ao3"] .mjb-item { background: rgba(60,42,38,.62); color: #ffffff; border-radius: 4px; }
-.mjb-root[data-theme="ao3"] .mjb-day.has-image .mjb-item { background: rgba(40,28,25,.58); color: #ffffff; }
-.mjb-root[data-theme="ao3"] .mjb-day:not(.has-image) .mjb-item { background: rgba(70,52,46,.75); color: #ffffff; border: none; }
-.mjb-root[data-theme="ao3"] .mjb-more { color: #ffffff; font-weight: 600; }
-.mjb-root[data-theme="ao3"] .mjb-day:not(.has-image) .mjb-more { color: #E07A8F; }
-.mjb-root[data-theme="ao3"] .mjb-photo-count { background: #E07A8F; color: #ffffff; box-shadow: 0 1px 4px rgba(60,30,20,.18); }
-.mjb-root[data-theme="ao3"] .mjb-date { background: linear-gradient(135deg, #F0B968, #E07A8F); color: #ffffff; box-shadow: 0 1px 4px rgba(60,30,20,.18); }
-.mjb-root[data-theme="ao3"] a { color: #C95C76; }
-.mjb-root[data-theme="ao3"] a:hover { color: #E07A8F; }
-.mjb-root[data-theme="ao3"] .mjb-detail h1,
-.mjb-root[data-theme="ao3"] .mjb-detail h2,
-.mjb-root[data-theme="ao3"] .mjb-detail h3,
-.mjb-root[data-theme="ao3"] .mjb-detail h4 { color: #E07A8F !important; }
-.mjb-root[data-theme="ao3"] .mjb-side h1,
-.mjb-root[data-theme="ao3"] .mjb-side h2,
-.mjb-root[data-theme="ao3"] .mjb-side h3,
-.mjb-root[data-theme="ao3"] .mjb-side h4 { color: #E07A8F !important; }
+.mjb-root[data-theme="ao3"] { --mjb-ink: #3f3a51; --mjb-muted: rgba(63,58,81,.62); --mjb-accent: #d96887; --mjb-accent-2: #3f9bb0; --mjb-card: rgba(255,250,244,.86); --mjb-line: rgba(196,129,145,.24); background: #fbf4eb; background-image: linear-gradient(180deg, rgba(255,249,241,.98), rgba(247,238,229,.88)), repeating-linear-gradient(0deg, rgba(102,88,104,.055) 0 1px, transparent 1px 30px); box-shadow: 0 18px 55px rgba(86,68,74,.14); }
+.mjb-root[data-theme="ao3"] .mjb-side, .mjb-root[data-theme="ao3"] .mjb-note-area { background: rgba(255,250,244,.62); border-color: rgba(196,129,145,.30); }
+.mjb-root[data-theme="ao3"] .mjb-month-tab.is-active { background: linear-gradient(90deg, #d96887, #e98aa1); color: #fffaf4; }
+.mjb-root[data-theme="ao3"] .mjb-item { background: linear-gradient(90deg, rgba(217,104,135,.20), rgba(63,155,176,.16)); }
+.mjb-root[data-theme="ao3"] .mjb-photo-count { background: rgba(255,250,244,.78); color: #3f3a51; }
+.mjb-root[data-theme="kitten"] { --mjb-ink: #3C5189; --mjb-muted: #819DCB; --mjb-accent: #8796BD; --mjb-accent-2: #5E6FA8; --mjb-card: rgba(237,243,255,.86); --mjb-line: rgba(135,150,189,.32); background: #CFDDF1; background-image: radial-gradient(circle at 12% 10%, rgba(255,255,255,.80), transparent 26%), radial-gradient(circle at 88% 86%, rgba(135,150,189,.20), transparent 32%), linear-gradient(180deg, rgba(237,243,255,.55), rgba(207,221,241,.28)); box-shadow: 0 18px 55px rgba(60,81,137,.16); }
+.mjb-root[data-theme="kitten"] .mjb-side, .mjb-root[data-theme="kitten"] .mjb-note-area { background: rgba(237,243,255,.66); border-color: rgba(135,150,189,.32); }
+.mjb-root[data-theme="kitten"] .mjb-month-tab.is-active { background: linear-gradient(90deg, #8796BD, #5E6FA8); color: #F1F5FF; }
+.mjb-root[data-theme="kitten"] .mjb-day:hover { border-color: rgba(135,150,189,.62); box-shadow: 0 12px 28px rgba(60,81,137,.15); }
 .mjb-root[data-theme="archive"] { --mjb-ink: #384E39; --mjb-muted: rgba(56,78,57,.68); --mjb-accent: #7C8C65; --mjb-accent-2: #4F6550; --mjb-card: rgba(236,246,221,.76); --mjb-line: rgba(79,101,80,.26); background: #ECF6DD; background-image: radial-gradient(circle at 10% 8%, rgba(255,255,255,.72), transparent 24%), linear-gradient(180deg, rgba(236,246,221,.98), rgba(247,241,232,.78)), repeating-linear-gradient(0deg, rgba(79,101,80,.045) 0 1px, transparent 1px 34px); box-shadow: 0 18px 55px rgba(56,78,57,.16); }
 .mjb-root[data-theme="archive"] .mjb-side, .mjb-root[data-theme="archive"] .mjb-note-area { background: rgba(236,246,221,.58); border-color: rgba(79,101,80,.30); }
 .mjb-root[data-theme="archive"] .mjb-month-tab.is-active { background: linear-gradient(90deg, #7C8C65, #4F6550); color: #ECF6DD; }
@@ -974,18 +944,18 @@ ${handFontFace}.monthly-journal-board { display: block; max-height: calc(100vh -
 .mjb-zoom-reset { min-width: 48px !important; }
 .mjb-root::before { content: ''; position: absolute; inset: 0; pointer-events: none; background-image: radial-gradient(rgba(255,255,255,.35) 0.7px, transparent 0.7px); background-size: 5px 5px; opacity: .24; }
 .mjb-head, .mjb-main { position: relative; z-index: 1; }
-.mjb-head { display: flex; gap: 16px; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.mjb-title { font-size: clamp(32px, 4.4vw, 56px); line-height: .9; font-family: Georgia, 'Times New Roman', serif; letter-spacing: -2px; }
+.mjb-head { display: flex; gap: 16px; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+.mjb-title { font-size: clamp(38px, 6vw, 78px); line-height: .86; font-family: Georgia, 'Times New Roman', serif; letter-spacing: -2px; }
 .mjb-title-link { color: inherit !important; text-decoration: none !important; cursor: pointer; border-radius: 14px; transition: background .16s ease, opacity .16s ease; }
 .mjb-title-link:hover { background: rgba(255,255,255,.22); opacity: .88; }
-.mjb-subtitle { color: var(--mjb-muted); font-size: 12px; letter-spacing: .18em; text-transform: uppercase; margin-top: 4px; }
+.mjb-subtitle { color: var(--mjb-muted); font-size: 12px; letter-spacing: .18em; text-transform: uppercase; margin-top: 8px; }
 .mjb-controls { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; max-width: 580px; }
 .mjb-controls button, .mjb-controls select, .mjb-controls input { border: 1px solid var(--mjb-line); background: rgba(255,255,255,.45); color: var(--mjb-ink); border-radius: 999px; padding: 7px 12px; font-size: 12px; backdrop-filter: blur(10px); }
 .mjb-controls select option { color: #263347; background: #f7f1e8; }
 .mjb-root[data-theme="night"] .mjb-controls select option { color: #223047; background: #edf3fb; }
 .mjb-controls button { cursor: pointer; font-weight: 700; }
 .mjb-controls input { min-width: 190px; }
-.mjb-month-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 10px; }
+.mjb-month-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 18px; }
 .mjb-month-tab { border: 0; border-radius: 999px; padding: 6px 10px; background: rgba(255,255,255,.32); color: var(--mjb-muted); cursor: pointer; }
 .mjb-month-tab.is-active { color: white; background: var(--mjb-accent); box-shadow: 0 6px 20px rgba(80,120,70,.22); }
 .mjb-main { display: grid; grid-template-columns: minmax(0, 1fr) 8px clamp(150px, 30%, var(--mjb-side)); gap: clamp(10px, 1.3vw, 16px); align-items: start; }
@@ -1020,13 +990,10 @@ a.mjb-date:hover { filter: brightness(1.06); transform: translateY(-1px); }
 .mjb-pop li { margin: 4px 0; font-size: 12px; }
 .mjb-pop p { margin: 8px 0 0; font-size: 12px; color: rgba(255,255,255,.82); }
 .mjb-pop a { color: #d9f1ff !important; }
-.mjb-detail-group-title { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
-.mjb-detail-group-title .mjb-grid-toggle { flex: 0 0 auto; }
 .mjb-resizer { border-radius: 999px; background: linear-gradient(var(--mjb-line), var(--mjb-accent), var(--mjb-line)); opacity: .45; cursor: col-resize; }
 .mjb-root[data-side-hidden="true"] .mjb-resizer { opacity: 0; pointer-events: none; }
 .mjb-side { min-width: 0; height: min(76vh, 720px); max-height: min(76vh, 720px); box-sizing: border-box; position: sticky; top: 12px; display: flex; flex-direction: column; border: 1px solid var(--mjb-line); border-radius: 24px; padding: 16px; background: rgba(255,255,255,.46); backdrop-filter: blur(12px); overflow: hidden; transition: padding .18s ease, border-radius .18s ease, background .18s ease; }
-.mjb-side.is-collapsed { min-width: 0; width: 34px; height: auto; min-height: 104px; max-height: none; align-self: start; align-items: center; padding: 8px 4px; border-radius: 16px; cursor: pointer; z-index: 5; }
-.mjb-side.is-collapsed:hover { background: rgba(255,255,255,.62); border-color: var(--mjb-accent); }
+.mjb-side.is-collapsed { min-width: 0; width: 34px; height: auto; min-height: 104px; max-height: none; align-self: start; align-items: center; padding: 8px 4px; border-radius: 16px; cursor: pointer; }
 .mjb-side-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 10px; }
 .mjb-side h3 { margin: 0; font-family: Georgia, serif; font-size: 28px; }
 .mjb-side-toggle { border: 1px solid var(--mjb-line); border-radius: 999px; padding: 4px 8px; background: rgba(255,255,255,.34); color: var(--mjb-muted); cursor: pointer; font-size: 12px; font-weight: 850; line-height: 1; }
@@ -1062,10 +1029,9 @@ a.mjb-date:hover { filter: brightness(1.06); transform: translateY(-1px); }
 .mjb-focus-panel input[type="range"] { width: 100%; accent-color: var(--mjb-accent); }
 .mjb-open-note { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; margin-left: 6px; color: var(--mjb-muted) !important; text-decoration: none !important; font: 900 12px/1 Georgia, serif; opacity: .42; vertical-align: .08em; cursor: pointer; }
 .mjb-open-note:hover { color: var(--mjb-ink) !important; opacity: .9; }
-.mjb-day-grid-toggle { margin-left: 8px; vertical-align: .05em; }
 .mjb-open-message { margin: 8px 0 0; padding: 8px 10px; border-radius: 12px; background: rgba(255,255,255,.38); color: var(--mjb-muted); font-size: 12px; white-space: pre-wrap; }
 .mjb-open-message.is-error { color: #8a2f2f; background: rgba(255, 228, 228, .72); }
-@container mjb-board (max-width: 1200px) {
+@container mjb-board (max-width: 720px) {
   .mjb-root { padding: 16px; border-radius: 22px; min-height: 0; }
   .mjb-head { gap: 10px; margin-bottom: 12px; }
   .mjb-title { font-size: clamp(30px, 10cqi, 56px); }
@@ -1083,8 +1049,8 @@ a.mjb-date:hover { filter: brightness(1.06); transform: translateY(-1px); }
   .mjb-week-chip { top: 24px; left: 4px; padding: 0 3px; font-size: 7px; }
   .mjb-photo-count { top: 4px; right: 4px; gap: 1px; padding: 2px 4px; font-size: 8px; }
   .mjb-items { left: 4px; right: 4px; bottom: 4px; gap: 1px; }
-  .mjb-item { font-size: clamp(6px, 1.4cqi, 9px); line-height: 1.18; border-radius: 6px; padding: 1px 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.2px; }
-  .mjb-more { font-size: clamp(6px, 1.3cqi, 8px); line-height: 1.15; }
+  .mjb-item { font-size: clamp(7px, 1.8cqi, 10px); line-height: 1.22; border-radius: 6px; padding: 0 3px; }
+  .mjb-more { font-size: clamp(7px, 1.6cqi, 9px); line-height: 1.15; }
   .mjb-side { height: min(70vh, 560px); max-height: min(70vh, 560px); padding: 10px; border-radius: 18px; }
   .mjb-side h3 { font-size: 20px; }
   .mjb-side-toggle { padding: 4px 7px; }
@@ -1094,7 +1060,7 @@ a.mjb-date:hover { filter: brightness(1.06); transform: translateY(-1px); }
   .mjb-detail-image { max-height: 120px; border-radius: 14px; margin: 8px 0 10px; }
   .mjb-photo-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
-@container mjb-board (max-width: 960px) {
+@container mjb-board (max-width: 560px) {
   .mjb-root { padding: 10px; border-radius: 18px; }
   .mjb-head { align-items: flex-start; }
   .mjb-title { font-size: clamp(26px, 12cqi, 42px); letter-spacing: -1px; }
@@ -1109,8 +1075,8 @@ a.mjb-date:hover { filter: brightness(1.06); transform: translateY(-1px); }
   .mjb-week-chip { display: none; }
   .mjb-photo-count { top: 3px; right: 3px; padding: 1px 3px; font-size: 7px; }
   .mjb-items { left: 3px; right: 3px; bottom: 3px; }
-  .mjb-item { font-size: 6px; line-height: 1.14; padding: 1px 2px; border-radius: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.2px; }
-  .mjb-more { font-size: 6px; line-height: 1.1; }
+  .mjb-item { font-size: 7px; line-height: 1.16; padding: 0 2px; border-radius: 5px; }
+  .mjb-more { font-size: 7px; line-height: 1.1; }
   .mjb-side { padding: 8px; border-radius: 16px; }
   .mjb-side h3 { font-size: 18px; }
   .mjb-note-area { min-height: 52px; max-height: 76px; padding: 8px; }
@@ -1121,6 +1087,19 @@ a.mjb-date:hover { filter: brightness(1.06); transform: translateY(-1px); }
 }
 @container mjb-board (max-width: 920px) { .mjb-main, .mjb-root[data-side-hidden="true"] .mjb-main { grid-template-columns: 1fr; } .mjb-resizer { display:none; } .mjb-side { position: static; height: auto; max-height: none; overflow: visible; } .mjb-detail { overflow: visible; flex: 0 0 auto; max-height: none; } .mjb-side.is-collapsed { width: auto; min-height: 44px; align-items: stretch; } .mjb-side.is-collapsed .mjb-side-head { writing-mode: horizontal-tb; } .mjb-grid { grid-auto-rows: minmax(100px, auto); } }
 @media (max-width: 920px) { .mjb-main, .mjb-root[data-side-hidden="true"] .mjb-main { grid-template-columns: 1fr; } .mjb-resizer { display:none; } .mjb-side { position: static; height: auto; max-height: none; overflow: visible; } .mjb-detail { overflow: visible; flex: 0 0 auto; max-height: none; } .mjb-side.is-collapsed { width: auto; min-height: 44px; align-items: stretch; } .mjb-side.is-collapsed .mjb-side-head { writing-mode: horizontal-tb; } .mjb-grid { grid-auto-rows: minmax(100px, auto); } }
+/* ── 手机端：全屏出血 + 排版补偿 ── */
+body.is-mobile .markdown-preview-view.monthly-journal-board .inline-title { display: none; }
+body.is-mobile .markdown-preview-view.monthly-journal-board .markdown-preview-sizer,
+body.is-mobile .markdown-preview-view.monthly-journal-board .markdown-preview-section { width: 100% !important; max-width: 100% !important; padding-left: 0 !important; padding-right: 0 !important; margin-left: 0 !important; margin-right: 0 !important; }
+body.is-mobile .monthly-journal-board { max-height: none !important; }
+body.is-mobile .mjb-root { padding: 8px; border-radius: 0; box-shadow: none; min-height: 0; }
+body.is-mobile .mjb-head { gap: 8px; margin-bottom: 10px; }
+body.is-mobile .mjb-weekdays { font-size: 9px; }
+body.is-mobile .mjb-item { font-size: 9px; line-height: 1.3; }
+body.is-mobile .mjb-more { font-size: 8px; }
+body.is-mobile .mjb-date { min-width: 17px; height: 17px; font-size: 9px; }
+body.is-mobile .mjb-zoom-viewport { scrollbar-gutter: auto; }
+${customThemeCss}
 `;
   document.head.appendChild(style);
 }
@@ -1219,43 +1198,10 @@ function renderDetail(side, data, dateStr) {
     detail.appendChild(make('p', '', '这一天没有日记。'));
     return;
   }
-  const dayGridItems = [...(day.entries || []), ...(day.related || [])];
-  const refreshDayCard = () => {
-    const rootEl = side.closest?.('.mjb-root');
-    const card = rootEl?.querySelector?.(`.mjb-day[data-date="${dateStr}"]`);
-    const holder = card?.querySelector?.('.mjb-items');
-    if (!holder) return;
-    holder.textContent = '';
-    const gridItems = dayGridItems.filter(item => !isGridHidden(item));
-    const visible = gridItems.slice(0, day.image ? 2 : 3);
-    for (const item of visible) holder.appendChild(make('div', 'mjb-item', `${item.time ? item.time + ' ' : ''}${item.title}`));
-    if (gridItems.length > visible.length) holder.appendChild(make('div', 'mjb-more', `+${gridItems.length - visible.length} more`));
-  };
-  const refreshDetailOnly = () => {
-    const oldScroll = detail.scrollTop || 0;
-    refreshDayCard();
-    renderDetail(side, data, dateStr);
-    const nextDetail = side.querySelector('.mjb-detail');
-    if (nextDetail) {
-      nextDetail.scrollTop = oldScroll;
-      requestAnimationFrame(() => { nextDetail.scrollTop = oldScroll; });
-    }
-  };
   if (day.path) {
     const open = configureInternalLink(make('a', 'internal-link mjb-open-note', '↗'), day.path);
     open.title = '打开日记';
     title.appendChild(open);
-  }
-  if (dayGridItems.length) {
-    const hidden = areGridItemsHidden(dayGridItems);
-    const dayToggle = make('span', `mjb-grid-toggle mjb-day-grid-toggle${hidden ? ' is-hidden' : ''}`, hidden ? '⊘' : '○');
-    dayToggle.title = hidden ? '已隐藏今天全部条目，点一下恢复' : '隐藏今天全部条目，只在右侧显示';
-    dayToggle.setAttribute('role', 'switch');
-    dayToggle.setAttribute('aria-checked', hidden ? 'true' : 'false');
-    dayToggle.tabIndex = 0;
-    dayToggle.onclick = ev => { ev.preventDefault(); ev.stopPropagation(); setGridItemsHidden(dayGridItems, !hidden); refreshDetailOnly(); };
-    dayToggle.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') dayToggle.click(); };
-    title.appendChild(dayToggle);
   }
   if (day.image) {
     const img = make('img', 'mjb-detail-image');
@@ -1329,36 +1275,20 @@ function renderDetail(side, data, dateStr) {
       detail.appendChild(panel);
     }
   }
-  const makeGridToggle = (items, onToggle) => {
-    const list = Array.isArray(items) ? items.filter(Boolean) : [items].filter(Boolean);
-    const hidden = areGridItemsHidden(list);
+  const addGridToggle = (li, item) => {
+    const hidden = isGridHidden(item);
+    li.appendChild(document.createTextNode(' '));
     const marker = make('span', `mjb-grid-toggle${hidden ? ' is-hidden' : ''}`, hidden ? '⊘' : '○');
     marker.title = hidden ? '已不放入日期格子，点一下放回' : '点一下仅在右侧显示';
     marker.setAttribute('role', 'switch');
     marker.setAttribute('aria-checked', hidden ? 'true' : 'false');
     marker.tabIndex = 0;
-    marker.onclick = ev => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      if (onToggle) onToggle(!hidden);
-      else setGridItemsHidden(list, !hidden);
-      refreshDetailOnly();
-    };
+    marker.onclick = ev => { ev.preventDefault(); ev.stopPropagation(); setGridHidden(item, !hidden); render(); };
     marker.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') marker.click(); };
-    return marker;
-  };
-  const addGridToggle = (li, item) => {
-    li.appendChild(document.createTextNode(' '));
-    li.appendChild(makeGridToggle(item));
-  };
-  const makeGroupTitle = (label, items) => {
-    const h = make('h4', 'mjb-detail-group-title');
-    h.appendChild(make('span', '', `${label} (${items.length})`));
-    h.appendChild(makeGridToggle(items));
-    return h;
+    li.appendChild(marker);
   };
   if (day.entries.length) {
-    detail.appendChild(makeGroupTitle('完成项', day.entries));
+    detail.appendChild(make('h4', '', '完成项'));
     const ul = make('ul', 'mjb-detail-list');
     for (const item of day.entries) {
       const li = make('li');
@@ -1377,69 +1307,26 @@ function renderDetail(side, data, dateStr) {
   }
   if (day.related?.length) {
     detail.appendChild(make('h4', '', '关联条目'));
-    const groups = new Map();
+    const ul = make('ul', 'mjb-detail-list');
     for (const item of day.related) {
-      const source = String(item.source || '其他');
-      if (!groups.has(source)) groups.set(source, []);
-      groups.get(source).push(item);
-    }
-    for (const [source, items] of groups) {
-      detail.appendChild(makeGroupTitle(source, items));
-      const ul = make('ul', 'mjb-detail-list');
-      for (const item of items) {
-        const li = make('li');
-        setText(li, item.title);
-        if (item.path) {
-          li.appendChild(document.createTextNode(' '));
-          li.appendChild(configureInternalLink(make('a', 'internal-link', '↗'), item.path));
-        } else if (safeUrl(item.url)) {
-          li.appendChild(document.createTextNode(' '));
-          const a = make('a', '', '↗');
-          a.href = safeUrl(item.url);
-          li.appendChild(a);
-        }
-        addGridToggle(li, item);
-        ul.appendChild(li);
+      const li = make('li');
+      setText(li, item.title);
+      if (item.path) {
+        li.appendChild(document.createTextNode(' '));
+        li.appendChild(configureInternalLink(make('a', 'internal-link', '↗'), item.path));
+      } else if (safeUrl(item.url)) {
+        li.appendChild(document.createTextNode(' '));
+        const a = make('a', '', '↗');
+        a.href = safeUrl(item.url);
+        li.appendChild(a);
       }
-      detail.appendChild(ul);
+      addGridToggle(li, item);
+      ul.appendChild(li);
     }
+    detail.appendChild(ul);
   }
 }
 
-function captureScrollState() {
-  const containers = [
-    window,
-    document.scrollingElement,
-    ROOT.closest?.('.markdown-preview-view'),
-    ROOT.closest?.('.view-content'),
-    ROOT.querySelector?.('.mjb-zoom-viewport'),
-    ROOT.querySelector?.('.mjb-side'),
-    ROOT.querySelector?.('.mjb-detail'),
-  ].filter(Boolean);
-  return containers.map(el => {
-    if (el === window) return { el, x: window.scrollX || 0, y: window.scrollY || 0 };
-    return { el, x: el.scrollLeft || 0, y: el.scrollTop || 0 };
-  });
-}
-function restoreScrollState(snapshot) {
-  for (const item of snapshot || []) {
-    try {
-      if (item.el === window) window.scrollTo(item.x, item.y);
-      else {
-        item.el.scrollLeft = item.x;
-        item.el.scrollTop = item.y;
-      }
-    } catch {}
-  }
-}
-async function renderPreservingScroll() {
-  const snapshot = captureScrollState();
-  await render();
-  const restore = () => restoreScrollState(snapshot);
-  restore();
-  requestAnimationFrame(restore);
-  setTimeout(restore, 60);
-}
 async function render() {
   installStyles();
   saveState(state);
@@ -1475,13 +1362,10 @@ async function render() {
   const head = make('div', 'mjb-head');
   const titleWrap = make('div');
   const title = make('div', 'mjb-title');
-  const boardPath = dv.current()?.file?.path || '';
+  const monthPath = monthNotePath(state.year, state.month);
   const yearPath = yearNotePath(state.year);
-  const monthTitle = make(boardPath ? 'a' : 'span', boardPath ? 'internal-link mjb-title-link' : '', MONTHS_CN[state.month]);
-  if (boardPath) {
-    configureInternalLink(monthTitle, boardPath);
-    monthTitle.title = '返回月历总览';
-  }
+  const monthTitle = make(monthPath ? 'a' : 'span', monthPath ? 'internal-link mjb-title-link' : '', MONTHS_CN[state.month]);
+  if (monthPath) configureInternalLink(monthTitle, monthPath);
   const yearTitle = make(yearPath ? 'a' : 'span', yearPath ? 'internal-link mjb-title-link' : '', state.year);
   if (yearPath) configureInternalLink(yearTitle, yearPath);
   title.append(monthTitle, document.createTextNode(' '), yearTitle);
@@ -1562,7 +1446,6 @@ async function render() {
       const dateStr = ymd(state.year, state.month, dayNum);
       const info = monthData.get(dateStr);
       const card = make('article', `mjb-day${info?.image ? ' has-image' : ''}${state.selectedDate === dateStr ? ' is-selected' : ''}`);
-      card.dataset.date = dateStr;
       card.onclick = () => { state.selectedDate = dateStr; saveState(state); loadDayNoteIntoArea(dateStr); renderDetail(side, monthData, dateStr); grid.querySelectorAll('.mjb-day').forEach(el => el.classList.remove('is-selected')); card.classList.add('is-selected'); };
       card.ondblclick = ev => { if (info?.path) { ev.preventDefault(); ev.stopPropagation(); app.workspace.openLinkText(info.path, dv.current().file.path, false); } };
       const dateBadge = make(info?.path ? 'a' : 'div', info?.path ? 'internal-link mjb-date' : 'mjb-date', dayNum);
@@ -1614,15 +1497,10 @@ async function render() {
   sideHead.appendChild(make('h3', '', state.sideHidden ? 'Info' : 'Notes'));
   const sideToggle = make('button', 'mjb-side-toggle', state.sideHidden ? '›' : '‹');
   sideToggle.title = state.sideHidden ? '显示右侧信息' : '隐藏右侧信息';
-  const setSideHidden = hidden => {
-    state.sideHidden = !!hidden;
-    saveState(state);
-    renderPreservingScroll();
-  };
-  sideToggle.onclick = ev => { ev.preventDefault(); ev.stopPropagation(); setSideHidden(!state.sideHidden); };
+  sideToggle.onclick = ev => { ev.stopPropagation(); state.sideHidden = !state.sideHidden; saveState(state); render(); };
   sideHead.appendChild(sideToggle);
   side.appendChild(sideHead);
-  side.onclick = ev => { if (state.sideHidden) { ev.preventDefault(); ev.stopPropagation(); setSideHidden(false); } };
+  side.onclick = () => { if (state.sideHidden) { state.sideHidden = false; saveState(state); render(); } };
   noteArea = make('textarea', 'mjb-note-area');
   noteArea.placeholder = '选择一天后在这里写 daily note 备注…';
   noteArea.oninput = () => {
@@ -1687,189 +1565,6 @@ if (typeof module !== 'undefined') module.exports = api;
 
   return module.exports;
 }
-
-// ===== Glass external window (route A: transparent acrylic snapshot) =====
-const GLASS_CHROME_CSS = `
-html,body{margin:0;padding:0;height:100%;background:transparent;overflow:hidden;font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;}
-*{box-sizing:border-box;}
-.mjbg-shell{position:fixed;inset:4px;display:flex;flex-direction:column;border-radius:18px;overflow:hidden;
-  background:rgba(22,24,32,.30);
-  border:1px solid rgba(255,255,255,.18);
-  box-shadow:0 22px 70px rgba(0,0,0,.44), inset 0 1px 0 rgba(255,255,255,.24), inset 0 0 0 .5px rgba(255,255,255,.07);
-  backdrop-filter:blur(30px) saturate(168%); -webkit-backdrop-filter:blur(30px) saturate(168%);}
-.mjbg-shell::after{content:'';position:absolute;inset:0;pointer-events:none;border-radius:18px;
-  background:linear-gradient(160deg, rgba(255,255,255,.09), rgba(255,255,255,0) 38%);}
-.mjbg-chrome{position:relative;z-index:2;flex:0 0 auto;height:26px;display:flex;align-items:center;justify-content:space-between;
-  padding:0 5px 0 9px;-webkit-app-region:drag;background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.08);}
-.mjbg-title{font-size:10px;font-weight:700;letter-spacing:.02em;color:rgba(255,255,255,.82);text-shadow:0 1px 2px rgba(0,0,0,.45);min-width:58px;text-align:center;}
-.mjbg-nav{display:flex;align-items:center;gap:2px;}
-.mjbg-actions{display:flex;gap:2px;-webkit-app-region:no-drag;}
-.mjbg-btn{-webkit-app-region:no-drag;width:18px;height:18px;border:1px solid rgba(255,255,255,.16);border-radius:999px;
-  background:rgba(255,255,255,.09);color:rgba(255,255,255,.86);font-size:10px;line-height:1;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;transition:background .15s,transform .1s;}
-.mjbg-btn:hover{background:rgba(255,255,255,.22);}
-.mjbg-btn:active{transform:scale(.88);}
-.mjbg-btn.is-active{background:rgba(120,180,255,.42);border-color:rgba(160,205,255,.66);color:#fff;}
-.mjbg-stage{position:relative;z-index:1;flex:1 1 auto;min-height:0;overflow:auto;padding:3px;display:flex;align-items:flex-start;justify-content:center;}
-.mjbg-fit{position:relative;margin:0 auto;}
-.mjbg-sizer{width:1180px;transform-origin:top left;will-change:transform;}
-.mjbg-stage .mjb-root{margin:0!important;max-height:none!important;height:auto!important;min-height:0!important;width:1180px!important;box-shadow:none!important;}
-.mjbg-stage .mjb-side{position:static!important;overflow:hidden!important;}
-.mjbg-stage .mjb-detail{overflow:auto!important;min-height:0!important;flex:1 1 auto!important;}
-.mjbg-stage .mjb-zoom-viewport{max-height:none!important;overflow:visible!important;}
-.mjbg-stage .monthly-journal-board{max-height:none!important;overflow:visible!important;}
-.mjbg-stage::-webkit-scrollbar{width:9px;height:9px;}
-.mjbg-stage::-webkit-scrollbar-thumb{background:rgba(255,255,255,.24);border-radius:9px;}
-.mjbg-stage::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.38);}
-.mjbg-stage::-webkit-scrollbar-track{background:transparent;}
-.mjbg-loading{position:absolute;inset:0;z-index:9;display:none;align-items:center;justify-content:center;flex-direction:column;gap:8px;
-  background:rgba(18,20,28,.42);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);border-radius:18px;
-  -webkit-app-region:no-drag;pointer-events:none;}
-.mjbg-loading.is-on{display:flex;}
-.mjbg-spinner{width:24px;height:24px;border-radius:999px;border:2.5px solid rgba(255,255,255,.22);border-top-color:rgba(255,255,255,.92);
-  animation:mjbg-spin .7s linear infinite;}
-.mjbg-loading-txt{font-size:10px;font-weight:700;letter-spacing:.06em;color:rgba(255,255,255,.86);text-shadow:0 1px 2px rgba(0,0,0,.5);}
-@keyframes mjbg-spin{to{transform:rotate(360deg);}}
-.mjbg-busy{position:absolute;top:5px;right:5px;z-index:5;width:9px;height:9px;border-radius:999px;
-  background:radial-gradient(circle at 30% 30%, #b6e0ff, #5aa0ff);box-shadow:0 0 6px rgba(120,180,255,.8);
-  opacity:0;transition:opacity .2s;pointer-events:none;}
-.mjbg-busy.is-on{opacity:1;animation:mjbg-pulse 1s ease-in-out infinite;}
-@keyframes mjbg-pulse{0%,100%{transform:scale(1);opacity:.55;}50%{transform:scale(1.35);opacity:1;}}
-`;
-
-const GLASS_RUNTIME_JS = `
-(function(){
-  var electron=null, remote=null;
-  try{ electron=require('electron'); }catch(e){}
-  try{ remote=require('@electron/remote'); }catch(e){ try{ remote=electron&&electron.remote; }catch(_){} }
-  function curWin(){ try{ return remote&&remote.getCurrentWindow?remote.getCurrentWindow():null; }catch(e){ return null; } }
-
-  // 每天右栏详情（离屏快照时逐格捕获），用于实现「点击格子切换」。
-  var DAY_DETAILS={};
-  try{ var _dj=document.getElementById('mjbg-day-details'); if(_dj) DAY_DETAILS=JSON.parse(_dj.textContent||'{}'); }catch(e){ console.error('[glass] details parse', e); }
-  function switchDay(cell){
-    var d=cell.getAttribute('data-date'); if(!d) return;
-    var rec=DAY_DETAILS[d];
-    var detailEl=document.querySelector('.mjb-side .mjb-detail');
-    var noteEl=document.querySelector('.mjb-side .mjb-note-area');
-    if(rec&&detailEl){ detailEl.innerHTML=rec.detail||''; }
-    if(noteEl){ if(rec){ noteEl.value=rec.note||''; noteEl.placeholder=rec.ph||''; } }
-    var sel=document.querySelectorAll('.mjb-day.is-selected');
-    for(var i=0;i<sel.length;i++) sel[i].classList.remove('is-selected');
-    cell.classList.add('is-selected');
-    scheduleFit();
-  }
-  function glassDir(){
-    try{
-      var p=decodeURIComponent(location.pathname).replace(/^\\/+/,'');
-      return p.substring(0,p.replace(/\\\\/g,'/').lastIndexOf('/'));
-    }catch(e){ return null; }
-  }
-  function flagPath(){ var d=glassDir(); return d?d+'/_glass-refresh.flag':null; }
-  function navFlagPath(){ var d=glassDir(); return d?d+'/_glass-nav.flag':null; }
-  // 当前玻璃窗展示的月份（主窗口注入），翻月时据此计算目标月。
-  var CUR={year:__YEAR__,month:__MONTH__};
-  function gotoMonth(y,m){
-    while(m<0){m+=12;y--;} while(m>11){m-=12;y++;}
-    try{ var fs=require('fs'); var fp=navFlagPath(); if(fp) fs.writeFileSync(fp, y+'-'+(m+1)+'|'+Date.now(), 'utf8'); }catch(e){ console.error(e); }
-  }
-  var pinned=true;
-  function showLoading(txt){
-    try{
-      var ov=document.getElementById('mjbg-loading');
-      if(ov){ var t=ov.querySelector('.mjbg-loading-txt'); if(t&&txt) t.textContent=txt; ov.classList.add('is-on'); }
-      var b=document.getElementById('mjbg-busy'); if(b) b.classList.add('is-on');
-    }catch(e){}
-  }
-  document.addEventListener('click', function(ev){
-    var btn=ev.target.closest && ev.target.closest('.mjbg-btn');
-    if(btn){
-      var act=btn.getAttribute('data-act');
-      if(act==='close'){ var w=curWin(); if(w){try{w.close();}catch(e){}} else { try{window.close();}catch(e){} } return; }
-      if(act==='pin'){ var w2=curWin(); pinned=!pinned; if(w2){try{w2.setAlwaysOnTop(pinned,'floating');}catch(e){}} btn.classList.toggle('is-active',pinned); return; }
-      if(act==='prev'){ showLoading('载入中…'); gotoMonth(CUR.year, CUR.month-1); btn.classList.add('is-active'); setTimeout(function(){btn.classList.remove('is-active');},320); return; }
-      if(act==='next'){ showLoading('载入中…'); gotoMonth(CUR.year, CUR.month+1); btn.classList.add('is-active'); setTimeout(function(){btn.classList.remove('is-active');},320); return; }
-      if(act==='today'){ showLoading('载入中…'); var dt=new Date(); gotoMonth(dt.getFullYear(), dt.getMonth()); btn.classList.add('is-active'); setTimeout(function(){btn.classList.remove('is-active');},320); return; }
-      if(act==='refresh'){
-        showLoading('刷新中…');
-        try{ var fs=require('fs'); var fp=flagPath(); if(fp) fs.writeFileSync(fp, String(Date.now()), 'utf8'); }catch(e){ console.error(e); }
-        btn.classList.add('is-active'); setTimeout(function(){btn.classList.remove('is-active');},520);
-        return;
-      }
-    }
-    var link=ev.target.closest && ev.target.closest('[data-href]');
-    if(link){
-      ev.preventDefault(); ev.stopPropagation();
-      var href=link.getAttribute('data-href')||'';
-      if(href){
-        var url='obsidian://open?vault=__VAULT__&file='+encodeURIComponent(href.replace(/\\.md$/,''));
-        try{ var sh=(electron&&electron.shell)?electron.shell:require('electron').shell; sh.openExternal(url); }catch(e){ console.error(e); }
-      }
-      return;
-    }
-    var dayCell=ev.target.closest && ev.target.closest('.mjb-day[data-date]');
-    if(dayCell){ ev.preventDefault(); ev.stopPropagation(); switchDay(dayCell); return; }
-  }, true);
-  (function(){ var w=curWin(); if(w){ try{ w.setAlwaysOnTop(true,'floating'); }catch(e){} } var pb=document.querySelector('.mjbg-btn[data-act="pin"]'); if(pb) pb.classList.add('is-active'); })();
-
-  // 等比 contain 适配：sizer 固定 1180px 自然宽度（与离屏渲染一致，比例 1:1），
-  // 取「宽适配比」与「高适配比」中较小者整体 scale，保证一屏显示全、无需滚动。
-  var BASE_W=1180;
-  // 玻璃窗把 .mjb-root 锁成 1180px，但离屏快照里的格子高度是按放大后的画布宽度算的，
-  // 直接用会变成竖长方形。这里按玻璃窗里的真实列宽重算，让日期格回到正方形；
-  // 同时把侧栏高度对齐日历列，详情/笔记超出时内部滚动，避免整块看板被拉很长。
-  function relayoutGlass(sizer){
-    if(!sizer) return;
-    var grids=sizer.querySelectorAll('.mjb-grid');
-    for(var k=0;k<grids.length;k++){
-      var grid=grids[k];
-      var gcs=getComputedStyle(grid);
-      var gap=parseFloat(gcs.columnGap||gcs.gap||'0')||0;
-      var w=grid.clientWidth||grid.getBoundingClientRect().width||0;
-      if(w<=1) continue;
-      var size=Math.max(42, Math.floor((w-gap*6)/7));
-      grid.style.gridAutoRows=size+'px';
-      var ds=grid.querySelectorAll('.mjb-day');
-      for(var j=0;j<ds.length;j++){ ds[j].style.height=size+'px'; ds[j].style.minHeight=size+'px'; }
-    }
-    var cal=sizer.querySelector('.mjb-calendar');
-    var side=sizer.querySelector('.mjb-side');
-    if(cal&&side){
-      var hCal=cal.offsetHeight||0;
-      if(hCal>0){ side.style.setProperty('height',hCal+'px','important'); side.style.setProperty('max-height',hCal+'px','important'); }
-    }
-  }
-  function fitGlass(){
-    var stage=document.querySelector('.mjbg-stage');
-    var fit=document.querySelector('.mjbg-fit');
-    var sizer=document.querySelector('.mjbg-sizer');
-    if(!stage||!fit||!sizer) return;
-    var cs=getComputedStyle(stage);
-    var padL=parseFloat(cs.paddingLeft)||0, padR=parseFloat(cs.paddingRight)||0;
-    var padT=parseFloat(cs.paddingTop)||0, padB=parseFloat(cs.paddingBottom)||0;
-    var availW=stage.clientWidth-padL-padR;
-    var availH=stage.clientHeight-padT-padB;
-    if(availW<=0||availH<=0) return;
-    // 先清掉缩放，按真实 1180 宽度修正格子与侧栏，再量自然高度
-    sizer.style.transform='none';
-    relayoutGlass(sizer);
-    var natH=sizer.offsetHeight||1;
-    var scale=Math.min(availW/BASE_W, availH/natH);
-    if(!isFinite(scale)||scale<=0) scale=availW/BASE_W;
-    sizer.style.transformOrigin='top left';
-    sizer.style.transform='scale('+scale+')';
-    // transform 不改变布局盒尺寸，手动给 fit 包裹层定缩放后宽高，居中 + 滚动正确
-    fit.style.width=Math.ceil(BASE_W*scale)+'px';
-    fit.style.height=Math.ceil(natH*scale)+'px';
-  }
-  var _ft=null;
-  function scheduleFit(){ if(_ft) clearTimeout(_ft); _ft=setTimeout(fitGlass,60); }
-  window.addEventListener('resize', scheduleFit);
-  window.addEventListener('load', function(){ fitGlass(); setTimeout(fitGlass,200); setTimeout(fitGlass,600); });
-  if(document.readyState!=='loading'){ fitGlass(); setTimeout(fitGlass,200); setTimeout(fitGlass,600); }
-  else document.addEventListener('DOMContentLoaded', function(){ fitGlass(); setTimeout(fitGlass,200); });
-})();
-`;
 
 module.exports = class MonthlyBoardPlugin extends Plugin {
   async onload() {
@@ -2825,5 +2520,89 @@ class MonthlyBoardSettingTab extends PluginSettingTab {
         .setButtonText('打开 / 刷新玻璃窗')
         .setCta()
         .onClick(() => this.plugin.openGlassBoard().catch(error => this.plugin.showFailure('Glass board open failed', error))));
+
+    this.renderCustomThemes(containerEl);
+  }
+
+  async renderCustomThemes(containerEl) {
+    const COLOR_FIELDS = [['ink', '文字主色'], ['muted', '次要文字'], ['accent', '强调色'], ['accent2', '次强调'], ['card', '格子底色'], ['line', '描边色'], ['background', '背景']];
+    const wrap = containerEl.createDiv();
+    wrap.createEl('h3', { text: '自制主题（可视化取色器）' });
+    const hint = wrap.createEl('div', { text: '正在读取配置…' });
+    hint.style.cssText = 'font-size:12px;opacity:.7;margin-bottom:6px;';
+    let file, configObj;
+    try {
+      const configPath = normalizePath(this.plugin.settings.configPath || DEFAULT_SETTINGS.configPath);
+      if (!isSafeVaultPath(configPath) || !configPath.endsWith('.json')) throw new Error('配置路径必须是 vault 内的 .json');
+      file = this.app.vault.getAbstractFileByPath(configPath);
+      if (!file) throw new Error('找不到配置文件：' + configPath);
+      configObj = JSON.parse(await this.app.vault.read(file));
+      hint.setText('编辑后点「保存到配置」写回 ' + configPath + '，刷新看板即可生效。');
+    } catch (e) {
+      hint.setText('无法读取配置文件：' + ((e && e.message) || e));
+      return;
+    }
+    configObj.theme = configObj.theme || {};
+    const themes = Array.isArray(configObj.theme.customThemes) ? configObj.theme.customThemes : [];
+    const listEl = wrap.createDiv();
+    const render = () => {
+      listEl.empty();
+      if (!themes.length) {
+        const empty = listEl.createEl('div', { text: '（暂无自制主题，点下方「+ 添加主题」）' });
+        empty.style.cssText = 'opacity:.6;font-size:12px;padding:4px 0;';
+      }
+      themes.forEach((t, idx) => {
+        const card = listEl.createDiv();
+        card.style.cssText = 'border:1px solid var(--background-modifier-border);border-radius:8px;padding:8px 12px;margin:8px 0;';
+        new Setting(card).setName('主题 #' + (idx + 1))
+          .addText(tx => tx.setPlaceholder('id（英文，必填）').setValue(t.id || '').onChange(v => { t.id = v.trim(); }))
+          .addText(tx => tx.setPlaceholder('显示名 label').setValue(t.label || '').onChange(v => { t.label = v.trim(); }))
+          .addExtraButton(b => b.setIcon('trash').setTooltip('删除此主题').onClick(() => { themes.splice(idx, 1); render(); }));
+        for (const pair of COLOR_FIELDS) {
+          const key = pair[0], cn = pair[1];
+          const s = new Setting(card).setName(cn).setDesc(key);
+          s.addText(tx => {
+            tx.setPlaceholder(key === 'background' ? '#色值 / rgba() / 渐变' : '#色值 或 rgba()').setValue(t[key] || '').onChange(v => { t[key] = v.trim(); });
+            tx.inputEl.style.width = '210px';
+            tx.inputEl.setAttribute('data-key', key);
+          });
+          const picker = s.controlEl.createEl('input');
+          picker.type = 'color';
+          picker.style.cssText = 'width:32px;height:28px;padding:0;border:none;background:none;cursor:pointer;';
+          const m = /^#([0-9a-fA-F]{6})$/.exec((t[key] || '').trim());
+          picker.value = m ? m[0] : '#888888';
+          picker.addEventListener('input', () => {
+            t[key] = picker.value;
+            const inp = s.controlEl.querySelector('input[data-key="' + key + '"]');
+            if (inp) inp.value = picker.value;
+          });
+        }
+      });
+    };
+    render();
+    new Setting(wrap)
+      .addButton(b => b.setButtonText('+ 添加主题').onClick(() => { themes.push({ id: '', label: '' }); render(); }))
+      .addButton(b => b.setButtonText('保存到配置').setCta().onClick(async () => {
+        const seen = new Set();
+        const out = [];
+        for (const t of themes) {
+          if (!t.id) continue;
+          if (seen.has(t.id)) { new Notice('主题 id 重复：' + t.id); return; }
+          seen.add(t.id);
+          const o = { id: t.id };
+          if (t.label) o.label = t.label;
+          for (const pair of COLOR_FIELDS) { if (t[pair[0]]) o[pair[0]] = t[pair[0]]; }
+          if (t.backgroundImage) o.backgroundImage = t.backgroundImage;
+          if (t.extraCss) o.extraCss = t.extraCss;
+          out.push(o);
+        }
+        try {
+          const fresh = JSON.parse(await this.app.vault.read(file));
+          fresh.theme = fresh.theme || {};
+          fresh.theme.customThemes = out;
+          await this.app.vault.modify(file, JSON.stringify(fresh, null, 2));
+          new Notice('已保存 ' + out.length + ' 个自制主题，刷新看板生效。');
+        } catch (e) { new Notice('保存失败：' + ((e && e.message) || e)); }
+      }));
   }
 }
