@@ -12,6 +12,7 @@ const DEFAULT_SETTINGS = {
   writeNotesToMarkdown: false,
   floatingSourcePath: 'Monthly Board.md',
   calendarGotoMonthlyBoard: true,
+  strikeDoneItems: false,
   sourcesOverride: null,
   externalWindow: {
     width: 860,
@@ -95,6 +96,8 @@ const MB_I18N = {
     setLegacyDesc: 'Notes now save to the selected daily note automatically. This legacy toggle only affects old monthly-note storage.',
     setCalGotoName: 'Calendar widget month-title opens Monthly Board',
     setCalGotoDesc: 'Clicking the month title (e.g. "Oct 2026") in the sidebar calendar widget opens the monthly board at that month. When off, clicks keep the calendar plugin\'s own behavior (create/open monthly note).',
+    setStrikeDoneName: 'Strike through completed items',
+    setStrikeDoneDesc: 'Items whose status is done are shown struck-through and grayed out in day cells and the detail panel. Off by default.',
     srcSecHeading: 'Related entry sources',
     srcSecDesc: 'Controls where "related entries" are read from and how they are grouped. Card order = group display order on the board (drag the ⋮⋮ handle to reorder). Editing here saves a settings override that takes precedence over the JSON config file.',
     srcDragHint: 'Drag to reorder (order = group display order)',
@@ -156,6 +159,8 @@ const MB_I18N = {
     setLegacyDesc: 'Notes 现在会自动保存到选中的日记。此旧开关仅影响老的月记存储方式。',
     setCalGotoName: '日历小部件月份标题跳转月历看板',
     setCalGotoDesc: '点击侧边日历小部件的月份标题（如「10月 2026」）时，打开月历看板笔记并切到对应月份。关闭后点击保持日历插件原有行为（创建/打开月记）。',
+    setStrikeDoneName: '完成条目划线变灰',
+    setStrikeDoneDesc: '状态为「完成」的条目在日期格子和右侧详情里显示为删除线+变灰。默认关闭。',
     srcSecHeading: '关联条目来源',
     srcSecDesc: '决定「关联条目」从哪些笔记读取、如何分组。卡片顺序 = 看板上分组的显示顺序（拖 ⋮⋮ 手柄调整）。在这里编辑会保存为设置覆盖，优先于 JSON 配置文件。',
     srcDragHint: '拖拽调整顺序（顺序即分组显示顺序）',
@@ -402,6 +407,12 @@ function monthNoteTargetPath(year, month) {
 }
 function markdownNotesEnabled() {
   return !!(config.plugin?.writeNotesToMarkdown ?? config.notes?.writeToMarkdown);
+}
+function strikeDoneEnabled() {
+  return !!config.plugin?.strikeDoneItems;
+}
+function doneCls(item) {
+  return strikeDoneEnabled() && isDone(item?.status) ? ' mjb-done' : '';
 }
 const MONTH_NOTE_BEGIN = '<!-- MONTHLY-BOARD-NOTES:BEGIN -->';
 const MONTH_NOTE_END = '<!-- MONTHLY-BOARD-NOTES:END -->';
@@ -1282,6 +1293,8 @@ a.mjb-date:hover { filter: brightness(1.06); transform: translateY(-1px); }
 .mjb-item { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-family: 'AaYouLongZeLingKeAiTi', 'Kalam', 'Ma Shan Zheng', 'Comic Sans MS', cursive; font-size: clamp(10px, 1vw, 12px); letter-spacing: .01em; color: var(--mjb-ink); background: linear-gradient(90deg, rgba(255,255,255,.30), rgba(255,255,255,.16)); border-radius: 8px; padding: 1px 5px; font-weight: 800; text-shadow: 0 1px 1px rgba(255,255,255,.42); box-shadow: 0 1px 4px rgba(0,0,0,.045); }
 .mjb-day.has-image .mjb-item { color: #f7fbff; background: linear-gradient(90deg, rgba(8,14,22,.50), rgba(8,14,22,.30)); text-shadow: 0 1px 2px rgba(0,0,0,.95), 0 0 1px rgba(0,0,0,.85); backdrop-filter: blur(.8px); }
 .mjb-more { font-family: 'AaYouLongZeLingKeAiTi', 'Kalam', 'Ma Shan Zheng', 'Comic Sans MS', cursive; font-size: clamp(10px, .95vw, 11px); color: var(--mjb-muted); margin-top: 1px; font-weight: 800; text-shadow: 0 1px 1px rgba(255,255,255,.36); }
+.mjb-item.mjb-done { text-decoration: line-through; opacity: .52; }
+.mjb-li.mjb-done > span:first-child { text-decoration: line-through; opacity: .52; }
 .mjb-day.has-image .mjb-more { color: rgba(247,251,255,.96); text-shadow: 0 1px 2px rgba(0,0,0,.95), 0 0 1px rgba(0,0,0,.85); }
 .mjb-photo-count { position: absolute; top: 7px; right: 7px; z-index: 3; display: inline-flex; align-items: center; gap: 3px; padding: 3px 6px; border-radius: 999px; background: rgba(255,255,255,.68); color: #263347; font-size: 10px; font-weight: 800; box-shadow: 0 2px 10px rgba(0,0,0,.16); cursor: pointer; user-select: none; transition: background .15s, transform .1s; }
 .mjb-photo-count:hover { background: rgba(255,255,255,.92); }
@@ -1658,7 +1671,7 @@ function renderDetail(side, data, dateStr) {
     detail.appendChild(make('h4', '', '完成项'));
     const ul = make('ul', 'mjb-detail-list');
     for (const item of day.entries) {
-      const li = make('li');
+      const li = make('li', item.status ? `mjb-li${doneCls(item)}` : '');
       const prefix = `${item.time ? item.time + ' · ' : ''}${item.title}`;
       appendClampText(li, prefix);
       if (day.path) {
@@ -1689,7 +1702,7 @@ function renderDetail(side, data, dateStr) {
       detail.appendChild(makeGroupTitle(source, items));
       const ul = make('ul', 'mjb-detail-list');
       for (const item of items) {
-        const li = make('li');
+        const li = make('li', `mjb-li${doneCls(item)}`);
         appendClampText(li, item.title);
         if (item.path) {
           li.appendChild(document.createTextNode(' '));
@@ -1898,7 +1911,7 @@ async function render() {
       const allItems = [...(info?.entries || []), ...(info?.related || [])];
       const gridItems = allItems.filter(item => !isGridHidden(item));
       const visible = gridItems.slice(0, info?.image ? 2 : 3);
-      for (const item of visible) items.appendChild(make('div', 'mjb-item', `${item.time ? item.time + ' ' : ''}${item.title}`));
+      for (const item of visible) items.appendChild(make('div', 'mjb-item' + doneCls(item), `${item.time ? item.time + ' ' : ''}${item.title}`));
       if (gridItems.length > visible.length) items.appendChild(make('div', 'mjb-more', `+${gridItems.length - visible.length} more`));
       card.appendChild(items);
       if (allItems.length || info?.image) card.title = '点击查看完整详情';
@@ -2647,7 +2660,7 @@ module.exports = class MonthlyBoardPlugin extends Plugin {
   async loadBoardRenderContext(container) {
     const entry = await this.getMonthlyBoardEntry();
     const config = this.applySettingsOverrides(await this.loadJsonConfig(entry.configPath));
-    config.plugin = Object.assign({}, config.plugin, { writeNotesToMarkdown: !!this.settings.writeNotesToMarkdown });
+    config.plugin = Object.assign({}, config.plugin, { writeNotesToMarkdown: !!this.settings.writeNotesToMarkdown, strikeDoneItems: !!this.settings.strikeDoneItems });
     return { entry, config, dv: this.getDataviewShim(container, entry.sourcePath) };
   }
 
@@ -2658,6 +2671,7 @@ module.exports = class MonthlyBoardPlugin extends Plugin {
       const config = this.applySettingsOverrides(await this.loadJsonConfig(options.config || this.settings.configPath));
       config.plugin = Object.assign({}, config.plugin, {
         writeNotesToMarkdown: !!this.settings.writeNotesToMarkdown,
+        strikeDoneItems: !!this.settings.strikeDoneItems,
       });
       const dv = this.getDataviewShim(el, ctx.sourcePath);
       const monthlyBoard = this.loadRenderer();
@@ -2818,6 +2832,16 @@ class MonthlyBoardSettingTab extends PluginSettingTab {
         .setValue(this.plugin.settings.calendarGotoMonthlyBoard !== false)
         .onChange(async value => {
           this.plugin.settings.calendarGotoMonthlyBoard = value;
+          await this.plugin.saveSettings();
+        }));
+
+    new Setting(containerEl)
+      .setName(t('setStrikeDoneName'))
+      .setDesc(t('setStrikeDoneDesc'))
+      .addToggle(toggle => toggle
+        .setValue(!!this.plugin.settings.strikeDoneItems)
+        .onChange(async value => {
+          this.plugin.settings.strikeDoneItems = value;
           await this.plugin.saveSettings();
         }));
 
