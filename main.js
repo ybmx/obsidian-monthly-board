@@ -1330,7 +1330,7 @@ p.mjb-clamp.is-expanded { display: block; -webkit-line-clamp: unset; overflow: v
 .mjb-photo-toggle { display: inline-flex; margin: -4px 0 10px; border: 1px solid var(--mjb-line); border-radius: 999px; padding: 5px 10px; background: rgba(255,255,255,.56); color: var(--mjb-ink); cursor: pointer; font-size: 11px; font-weight: 800; }
 .mjb-photo-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
 .mjb-photo-tools button { border: 1px solid var(--mjb-line); border-radius: 999px; padding: 5px 9px; background: rgba(255,255,255,.56); color: var(--mjb-ink); cursor: pointer; font-size: 11px; font-weight: 750; }
-.mjb-photo-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 8px 0 12px; }
+.mjb-photo-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 8px 0 12px; max-height: min(38vh, 320px); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding-right: 2px; }
 .mjb-photo-choice { position: relative; aspect-ratio: 1 / 1; padding: 0; border: 2px solid transparent; border-radius: 12px; overflow: hidden; background: transparent; cursor: pointer; }
 .mjb-photo-choice.is-active { border-color: var(--mjb-accent-2); box-shadow: 0 0 0 2px rgba(255,255,255,.42); }
 .mjb-photo-choice img { width: 100%; height: 100%; object-fit: cover; display: block; }
