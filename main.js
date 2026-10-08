@@ -558,6 +558,9 @@ function appendClampText(li, text) {
   li.appendChild(span);
   return span;
 }
+function makeGroupTitle(source, items) {
+  return make('h5', 'mjb-group-title', `${source} (${items.length})`);
+}
 function safeUrl(url) {
   const raw = String(url || '').trim();
   if (!raw) return '';
@@ -1288,6 +1291,7 @@ a.mjb-date:hover { filter: brightness(1.06); transform: translateY(-1px); }
 .mjb-side.is-collapsed .mjb-detail { display: none; }
 .mjb-note-area { width: 100%; min-height: 96px; max-height: 160px; resize: vertical; box-sizing: border-box; border: 1px solid var(--mjb-line); border-radius: 16px; background: rgba(255,255,255,.58); color: var(--mjb-ink); padding: 12px; margin: 8px 0 14px; flex: 0 0 auto; }
 .mjb-detail { border-top: 1px solid var(--mjb-line); padding-top: 12px; color: var(--mjb-ink); overflow: auto; min-height: 0; flex: 1 1 auto; padding-right: 6px; scrollbar-gutter: stable; }
+.mjb-group-title { margin: 10px 0 4px; font-size: 13px; font-weight: 700; color: var(--mjb-muted); }
 .mjb-detail p,
 .mjb-detail-list,
 .mjb-detail-list li,
