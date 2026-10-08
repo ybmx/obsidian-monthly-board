@@ -10,7 +10,7 @@ const DEFAULT_SETTINGS = {
   configPath: '_tools/monthly-board/monthly-board.config.json',
   forceReadingMode: true,
   writeNotesToMarkdown: false,
-  floatingSourcePath: 'Journal/月历总览.md',
+  floatingSourcePath: 'Monthly Board.md',
   calendarGotoMonthlyBoard: true,
   sourcesOverride: null,
   externalWindow: {
@@ -107,7 +107,7 @@ const MB_I18N = {
     srcRestoreFile: 'Revert to config file',
     srcCondsLabel: 'Filter conditions (AND)',
     phLabel: 'Label (e.g. 生活)',
-    phQuery: 'Dataview source, e.g. "数据/生活"; empty = whole vault',
+    phQuery: 'Dataview source, e.g. "Clippings"; empty = whole vault',
     phGroupBy: 'Group-by property (optional, e.g. 生活分类)',
     phDateFields: 'Date fields, comma-separated (optional)',
     phTitleField: 'Title property (optional)',
@@ -155,7 +155,7 @@ const MB_I18N = {
     setLegacyName: '旧版月记 Notes 开关',
     setLegacyDesc: 'Notes 现在会自动保存到选中的日记。此旧开关仅影响老的月记存储方式。',
     setCalGotoName: '日历小部件月份标题跳转月历看板',
-    setCalGotoDesc: '点击侧边日历小部件的月份标题（如「10月 2026」）时，打开月历总览并切到对应月份。关闭后点击保持日历插件原有行为（创建/打开月记）。',
+    setCalGotoDesc: '点击侧边日历小部件的月份标题（如「10月 2026」）时，打开月历看板笔记并切到对应月份。关闭后点击保持日历插件原有行为（创建/打开月记）。',
     srcSecHeading: '关联条目来源',
     srcSecDesc: '决定「关联条目」从哪些笔记读取、如何分组。卡片顺序 = 看板上分组的显示顺序（拖 ⋮⋮ 手柄调整）。在这里编辑会保存为设置覆盖，优先于 JSON 配置文件。',
     srcDragHint: '拖拽调整顺序（顺序即分组显示顺序）',
@@ -167,9 +167,9 @@ const MB_I18N = {
     srcAddCond: '添加条件',
     srcRestoreFile: '恢复使用配置文件',
     srcCondsLabel: '筛选条件（AND）',
-    phLabel: '标签（如 生活）',
-    phQuery: 'Dataview 源，如 "数据/生活"；留空=全库',
-    phGroupBy: '分组属性（可选，如 生活分类）',
+    phLabel: '标签（如 Clippings）',
+    phQuery: 'Dataview 源，如 "Clippings"；留空=全库',
+    phGroupBy: '分组属性（可选，如 category）',
     phDateFields: '日期字段，逗号分隔（可选）',
     phTitleField: '标题属性（可选）',
     phStatusField: '状态属性（可选）',
@@ -239,34 +239,31 @@ const DEFAULT_CONFIG = {
   monthsCn: ['一月','二月','三月','四月','五月','六月','七月','八月','九月','十月','十一月','十二月'],
   monthsEn: ['January','February','March','April','May','June','July','August','September','October','November','December'],
   weekdays: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
-  dateFields: ['预估完成时间', 'date', 'created_at', '创建时间', '发布时间', '公布时间', 'clipped', 'modified_at'],
+  dateFields: ['date', 'created', 'created_at', 'updated', 'modified_at', 'due', 'start', 'end'],
   journal: {
     query: '"Journal"',
     dailyFilePattern: '^\\d{4}-\\d{2}-\\d{2}$',
   },
   sources: [
-    { query: '"数据/工作"', label: '工作' },
-    { query: '"数据/旅行"', label: '旅行' },
-    { query: '"数据/生活"', label: '生活' },
-    { query: '"数据/Clippings"', label: '收藏' },
+    { query: '"Journal"', label: 'Journal' },
+    { query: '"Projects"', label: 'Projects' },
+    { query: '"Clippings"', label: 'Clippings' },
   ],
   periodicNotes: {
-    year: ['Journal/{year}/{year}.md'],
+    year: ['Journal/{year}/{year}.md', '{year}.md'],
     month: [
-      'Journal/{year}/{year}-Q{quarter}/{monthName}, {year}/{monthName}, {year}.md',
       'Journal/{year}/{year}-Q{quarter}/{monthNameEn}, {year}/{monthNameEn}, {year}.md',
+      '{monthNameEn}, {year}.md',
     ],
     week: [
-      'Journal/{mondayYear}/{mondayYear}-Q{mondayQuarter}/{mondayMonthName}, {mondayYear}/{isoYear}-W{week2}.md',
       'Journal/{mondayYear}/{mondayYear}-Q{mondayQuarter}/{mondayMonthNameEn}, {mondayYear}/{isoYear}-W{week2}.md',
+      '{isoYear}-W{week2}.md',
     ],
   },
   theme: {
-    handwritingFont: '数据/Attachments/fonts/AaYouLongZeLingKeAiTi-2.ttf',
+    handwritingFont: '',
     options: [['garden','绿野'], ['paper','纸页'], ['night','夜空'], ['rose','玫瑰'], ['ao3','AO3档案'], ['archive','青档案'], ['custom','自定背景']],
-    backgroundPresets: [
-      { name: 'winter', label: '冬夜', image: '![[数据/Attachments/monthly-backgrounds/A_refined_custom_background_fo_2026-05-23T22-07-49.png]]' },
-    ],
+    backgroundPresets: [],
   },
 };
 function mergeDeep(base, override) {
@@ -2095,7 +2092,7 @@ module.exports = class MonthlyBoardPlugin extends Plugin {
 
 
 
-    // 点击侧边日历小部件（Calendar Plus / Calendar）的月份标题 → 打开月历总览并切到对应月份（可在设置中关闭）
+    // 点击侧边日历小部件（Calendar Plus / Calendar）的月份标题 → 打开月历看板笔记并切到对应月份（可在设置中关闭）
     this.registerDomEvent(document, 'click', ev => {
       if (!this.settings.calendarGotoMonthlyBoard) return;
       const leafContent = ev.target?.closest?.('.workspace-leaf-content[data-type="calendar-plus-view"], .workspace-leaf-content[data-type="calendar"]');
@@ -2122,8 +2119,9 @@ module.exports = class MonthlyBoardPlugin extends Plugin {
       if (!info) return;
       window.__mjbCalendarGoto = { year: info.year, month: info.month, ts: Date.now() };
       window.dispatchEvent(new CustomEvent('mjb-calendar-goto', { detail: { year: info.year, month: info.month } }));
-      const dest = this.app.metadataCache.getFirstLinkpathDest('月历总览', '');
-      this.app.workspace.openLinkText(dest?.path || '月历总览.md', '', false);
+      const floatPath = normalizePath(this.settings.floatingSourcePath || DEFAULT_SETTINGS.floatingSourcePath);
+      const dest = this.app.metadataCache.getFirstLinkpathDest(floatPath.replace(/\.md$/i, ''), '');
+      this.app.workspace.openLinkText(dest?.path || floatPath, '', false);
     });
 
     this.addSettingTab(new MonthlyBoardSettingTab(this.app, this));
@@ -2475,11 +2473,13 @@ module.exports = class MonthlyBoardPlugin extends Plugin {
     const css = (styleNode && styleNode.textContent) || '';
     const vaultName = this.app.vault.getName();
     const script = GLASS_RUNTIME_JS.replace('__VAULT__', encodeURIComponent(vaultName));
+    const boardName = String(this.settings.floatingSourcePath || DEFAULT_SETTINGS.floatingSourcePath)
+      .split('/').pop().replace(/\.md$/i, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     return '<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8">'
       + '<meta name="viewport" content="width=device-width,initial-scale=1">'
       + '<style>' + css + '</style><style>' + GLASS_CHROME_CSS + '</style></head><body>'
       + '<div class="mjbg-shell">'
-      + '<div class="mjbg-chrome"><span class="mjbg-title">月历总览</span>'
+      + '<div class="mjbg-chrome"><span class="mjbg-title">' + boardName + '</span>'
       + '<div class="mjbg-actions">'
       + '<button class="mjbg-btn" data-act="refresh" title="刷新数据">&#8635;</button>'
       + '<button class="mjbg-btn" data-act="pin" title="置顶切换">&#128204;</button>'
@@ -2754,7 +2754,7 @@ class MonthlyBoardSettingTab extends PluginSettingTab {
       .setName(t('setFloatSrcName'))
       .setDesc(t('setFloatSrcDesc'))
       .addText(text => text
-        .setPlaceholder('Journal/月历总览.md')
+        .setPlaceholder('Monthly Board.md')
         .setValue(this.plugin.settings.floatingSourcePath || DEFAULT_SETTINGS.floatingSourcePath)
         .onChange(async value => {
           const next = value.trim() || DEFAULT_SETTINGS.floatingSourcePath;
@@ -2856,6 +2856,11 @@ class MonthlyBoardSettingTab extends PluginSettingTab {
 
   async getEffectiveSources() {
     if (Array.isArray(this.plugin.settings.sourcesOverride)) return { list: this.plugin.settings.sourcesOverride, isOverride: true };
+    try {
+      const entry = await this.plugin.getMonthlyBoardEntry();
+      const cfg = await this.plugin.loadJsonConfig(entry.configPath);
+      if (Array.isArray(cfg.sources)) return { list: cfg.sources, isOverride: false };
+    } catch (e) {}
     try {
       const cfg = await this.plugin.loadJsonConfig(this.plugin.settings.configPath);
       if (Array.isArray(cfg.sources)) return { list: cfg.sources, isOverride: false };
