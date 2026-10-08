@@ -1228,7 +1228,7 @@ ${handFontFace}.monthly-journal-board { display: block; max-height: calc(100vh -
 .mjb-root::before { content: ''; position: absolute; inset: 0; pointer-events: none; background-image: radial-gradient(rgba(255,255,255,.35) 0.7px, transparent 0.7px); background-size: 5px 5px; opacity: .24; }
 .mjb-head, .mjb-main { position: relative; z-index: 1; }
 .mjb-head { display: flex; gap: 16px; align-items: center; justify-content: space-between; margin-bottom: 18px; }
-.mjb-title { font-size: clamp(38px, 6vw, 78px); line-height: .86; font-family: Georgia, 'Times New Roman', serif; letter-spacing: -2px; }
+.mjb-title { font-size: clamp(32px, 4.4vw, 56px); line-height: .9; font-family: Georgia, 'Times New Roman', serif; letter-spacing: -2px; }
 .mjb-title-link { color: inherit !important; text-decoration: none !important; border: none !important; background: none !important; box-shadow: none !important; outline: none !important; padding: 0 !important; cursor: pointer; }
 .mjb-title-link:hover { opacity: .72; }
 .mjb-title-link:visited { color: inherit !important; }
