@@ -2192,6 +2192,21 @@ module.exports = class MonthlyBoardPlugin extends Plugin {
     console.error(prefix, error);
   }
 
+  // 显示类设置改动后立刻重渲染：阅读视图代码块 + 浮动面板 + 玻璃窗（未开则空操作）
+  refreshAllBoards() {
+    this.app.workspace.iterateAllLeaves(leaf => {
+      const view = leaf.view;
+      if (view instanceof MarkdownView && view.getMode?.() === 'preview') {
+        try { view.previewMode?.rerender(true); } catch (e) {}
+      }
+    });
+    if (this.floatingPanel) {
+      const body = this.floatingPanel.querySelector('.monthly-board-floating-body');
+      if (body) this.renderFloatingBoard(body).catch(console.error);
+    }
+    this.refreshGlassBoard().catch(() => {});
+  }
+
   loadRenderer() {
     if (this.monthlyBoard) return this.monthlyBoard;
     this.monthlyBoard = createMonthlyBoardRenderer();
@@ -2854,6 +2869,7 @@ class MonthlyBoardSettingTab extends PluginSettingTab {
         .onChange(async value => {
           this.plugin.settings.strikeDoneItems = value;
           await this.plugin.saveSettings();
+          this.plugin.refreshAllBoards();
         }));
 
     new Setting(containerEl)
@@ -2865,6 +2881,7 @@ class MonthlyBoardSettingTab extends PluginSettingTab {
         .onChange(async value => {
           this.plugin.settings.strikeDoneStatuses = value.split(/[,，]/).map(s => s.trim()).filter(Boolean);
           await this.plugin.saveSettings();
+          this.plugin.refreshAllBoards();
         }));
 
     containerEl.createEl('h3', { text: t('glassHeading') });
@@ -2955,7 +2972,7 @@ class MonthlyBoardSettingTab extends PluginSettingTab {
       }
       return this.plugin.settings.sourcesOverride;
     };
-    const save = () => this.plugin.saveSettings();
+    const save = async () => { await this.plugin.saveSettings(); this.plugin.refreshAllBoards(); };
     const rerender = () => this.renderSourcesEditor(host).catch(console.error);
 
     list.forEach((src, idx) => {
