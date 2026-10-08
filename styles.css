@@ -11,3 +11,13 @@
   .mjb-side.is-collapsed .mjb-side-head { writing-mode: horizontal-tb !important; }
   .mjb-grid { grid-auto-rows: minmax(100px, auto) !important; }
 }
+
+/* 设置页：关联条目来源编辑器 */
+.mjb-src-card { border: 1px solid var(--background-modifier-border); border-radius: 10px; padding: 4px 10px 10px; margin: 10px 0; }
+.mjb-src-card .setting-item { border: none; padding: 8px 0; }
+.mjb-src-conds-label { font-size: 12px; color: var(--text-muted); margin: 6px 0 2px; }
+.mjb-src-cond { display: flex; gap: 6px; align-items: center; margin: 4px 0; }
+.mjb-src-cond input[type="text"] { flex: 1 1 0; min-width: 0; }
+.mjb-src-cond select { flex: 0 0 auto; }
+.mjb-src-cond button { flex: 0 0 auto; }
+.mjb-src-addcond { margin-top: 4px; font-size: 12px; }

@@ -11,9 +11,11 @@ const DEFAULT_SETTINGS = {
   forceReadingMode: true,
   writeNotesToMarkdown: false,
   floatingSourcePath: 'Journal/月历总览.md',
+  calendarGotoMonthlyBoard: true,
+  sourcesOverride: null,
   externalWindow: {
-    width: 1080,
-    height: 720,
+    width: 860,
+    height: 680,
     left: null,
     top: null,
     alwaysOnTop: true,
@@ -46,6 +48,152 @@ function isSafeVaultPath(input) {
   const normalized = normalizePath(raw);
   return normalized && !normalized.split('/').includes('..');
 }
+
+function getObsidianUILanguage() {
+  try {
+    const stored = window.localStorage.getItem('language');
+    if (stored) return String(stored).toLowerCase().startsWith('zh') ? 'zh' : 'en';
+  } catch (e) {}
+  try {
+    const loc = window.moment && typeof window.moment.locale === 'function' ? window.moment.locale() : '';
+    if (loc) return String(loc).toLowerCase().startsWith('zh') ? 'zh' : 'en';
+  } catch (e) {}
+  try {
+    return String(navigator.language || 'en').toLowerCase().startsWith('zh') ? 'zh' : 'en';
+  } catch (e) { return 'en'; }
+}
+
+const MB_I18N = {
+  en: {
+    cmdInsert: 'Insert monthly board block',
+    cmdInspect: 'Inspect monthly board entry',
+    cmdToggleFloating: 'Toggle in-app floating monthly board',
+    cmdHover: 'Open monthly board floating note (Hover Editor)',
+    cmdPopout: 'Open monthly board in popout window',
+    cmdRefit: 'Refit monthly board popout',
+    cmdOpenGlass: 'Open glass monthly board',
+    cmdRefreshGlass: 'Refresh glass monthly board',
+    failHover: 'Hover Editor open failed',
+    failPopout: 'Popout open failed',
+    failGlassOpen: 'Glass board open failed',
+    failGlassRefresh: 'Glass board refresh failed',
+    noticeEntryOk: 'Monthly Board entry OK: {src} -> {cfg}',
+    noticeRefit: 'Monthly Board: refit {n} popout(s).',
+    noticeFloatingFailed: 'Monthly Board floating panel failed: ',
+    ariaRefresh: 'Refresh floating monthly board',
+    ariaMinimize: 'Minimize floating monthly board',
+    ariaClose: 'Close floating monthly board',
+    setConfigName: 'Default config path',
+    setConfigDesc: 'Relative path to a JSON config file in this vault.',
+    noticeConfigPath: 'Monthly Board config must be a relative .json path.',
+    setFloatSrcName: 'Floating board source note',
+    setFloatSrcDesc: 'Relative .md note path used by both in-app and external floating Monthly Board windows.',
+    noticeFloatSrc: 'Floating source must be a relative .md path.',
+    setForceReadingName: 'Force reading mode for Monthly Board notes',
+    setForceReadingDesc: 'When opening a note containing a monthly-board code block, switch that tab back to Reading view.',
+    setLegacyName: 'Legacy monthly Notes toggle',
+    setLegacyDesc: 'Notes now save to the selected daily note automatically. This legacy toggle only affects old monthly-note storage.',
+    setCalGotoName: 'Calendar widget month-title opens Monthly Board',
+    setCalGotoDesc: 'Clicking the month title (e.g. "Oct 2026") in the sidebar calendar widget opens the monthly board at that month. When off, clicks keep the calendar plugin\'s own behavior (create/open monthly note).',
+    srcSecHeading: 'Related entry sources',
+    srcSecDesc: 'Controls where "related entries" are read from and how they are grouped. Editing here saves a settings override that takes precedence over the JSON config file.',
+    srcFromFile: 'Current: JSON config file',
+    srcFromOverride: 'Current: settings override (takes precedence over config file)',
+    srcLoadFailed: 'Failed to load sources from the config file.',
+    srcDelete: 'Delete',
+    srcAdd: 'Add source',
+    srcAddCond: 'Add condition',
+    srcRestoreFile: 'Revert to config file',
+    srcCondsLabel: 'Filter conditions (AND)',
+    phLabel: 'Label (e.g. 生活)',
+    phQuery: 'Dataview source, e.g. "数据/生活"; empty = whole vault',
+    phGroupBy: 'Group-by property (optional, e.g. 生活分类)',
+    phDateFields: 'Date fields, comma-separated (optional)',
+    phTitleField: 'Title property (optional)',
+    phStatusField: 'Status property (optional)',
+    phUrlField: 'URL property (optional)',
+    phCondField: 'Property',
+    phCondValue: 'Value',
+    glassHeading: '玻璃悬浮窗 (Glass board)',
+    glassIntro: '透明无边框、Win11 亚克力毛玻璃的独立桌面窗口。显示当前月历快照（静态），点格子用 obsidian:// 跳回 Obsidian 编辑；窗内 ↻ 刷新数据、📌 置顶、✕ 关闭。',
+    setGlassSizeName: 'Glass window width / height',
+    setGlassSizeDesc: '玻璃悬浮窗初始尺寸（px）。',
+    setGlassTopName: 'Glass window always on top',
+    setGlassTopDesc: '打开时默认置顶（可在窗内用 📌 切换）。',
+    setGlassOpenName: '打开玻璃悬浮窗',
+    setGlassOpenDesc: '等同命令面板里的 “Open glass monthly board”。',
+    glassOpenButton: '打开 / 刷新玻璃窗',
+  },
+  zh: {
+    cmdInsert: '插入月历看板代码块',
+    cmdInspect: '检查月历看板条目',
+    cmdToggleFloating: '开关应用内浮动月历看板',
+    cmdHover: '在浮动笔记中打开月历看板（Hover Editor）',
+    cmdPopout: '在弹出窗口中打开月历看板',
+    cmdRefit: '重算月历看板弹窗缩放',
+    cmdOpenGlass: '打开玻璃悬浮月历看板',
+    cmdRefreshGlass: '刷新玻璃悬浮月历看板数据',
+    failHover: 'Hover Editor 打开失败',
+    failPopout: '弹出窗口打开失败',
+    failGlassOpen: '玻璃悬浮窗打开失败',
+    failGlassRefresh: '玻璃悬浮窗刷新失败',
+    noticeEntryOk: '月历看板条目正常：{src} -> {cfg}',
+    noticeRefit: '月历看板：已重算 {n} 个弹窗的缩放。',
+    noticeFloatingFailed: '月历看板浮动面板失败：',
+    ariaRefresh: '刷新浮动月历看板',
+    ariaMinimize: '最小化浮动月历看板',
+    ariaClose: '关闭浮动月历看板',
+    setConfigName: '默认配置文件路径',
+    setConfigDesc: '仓库内 JSON 配置文件的相对路径。',
+    noticeConfigPath: '月历看板配置必须是相对的 .json 路径。',
+    setFloatSrcName: '浮动看板来源笔记',
+    setFloatSrcDesc: '应用内浮动窗口和外部玻璃悬浮窗共用的 .md 笔记相对路径。',
+    noticeFloatSrc: '浮动看板来源必须是相对的 .md 路径。',
+    setForceReadingName: '强制月历看板笔记使用阅读模式',
+    setForceReadingDesc: '打开包含 monthly-board 代码块的笔记时，自动切回阅读视图。',
+    setLegacyName: '旧版月记 Notes 开关',
+    setLegacyDesc: 'Notes 现在会自动保存到选中的日记。此旧开关仅影响老的月记存储方式。',
+    setCalGotoName: '日历小部件月份标题跳转月历看板',
+    setCalGotoDesc: '点击侧边日历小部件的月份标题（如「10月 2026」）时，打开月历总览并切到对应月份。关闭后点击保持日历插件原有行为（创建/打开月记）。',
+    srcSecHeading: '关联条目来源',
+    srcSecDesc: '决定「关联条目」从哪些笔记读取、如何分组。在这里编辑会保存为设置覆盖，优先于 JSON 配置文件。',
+    srcFromFile: '当前生效：JSON 配置文件',
+    srcFromOverride: '当前生效：设置覆盖（优先于配置文件）',
+    srcLoadFailed: '从配置文件读取来源失败。',
+    srcDelete: '删除',
+    srcAdd: '添加来源',
+    srcAddCond: '添加条件',
+    srcRestoreFile: '恢复使用配置文件',
+    srcCondsLabel: '筛选条件（AND）',
+    phLabel: '标签（如 生活）',
+    phQuery: 'Dataview 源，如 "数据/生活"；留空=全库',
+    phGroupBy: '分组属性（可选，如 生活分类）',
+    phDateFields: '日期字段，逗号分隔（可选）',
+    phTitleField: '标题属性（可选）',
+    phStatusField: '状态属性（可选）',
+    phUrlField: '链接属性（可选）',
+    phCondField: '属性名',
+    phCondValue: '值',
+    glassHeading: '玻璃悬浮窗 (Glass board)',
+    glassIntro: '透明无边框、Win11 亚克力毛玻璃的独立桌面窗口。显示当前月历快照（静态），点格子用 obsidian:// 跳回 Obsidian 编辑；窗内 ↻ 刷新数据、📌 置顶、✕ 关闭。',
+    setGlassSizeName: '玻璃窗宽度 / 高度',
+    setGlassSizeDesc: '玻璃悬浮窗初始尺寸（px）。',
+    setGlassTopName: '玻璃窗默认置顶',
+    setGlassTopDesc: '打开时默认置顶（可在窗内用 📌 切换）。',
+    setGlassOpenName: '打开玻璃悬浮窗',
+    setGlassOpenDesc: '等同命令面板里的“打开玻璃悬浮月历看板”。',
+    glassOpenButton: '打开 / 刷新玻璃窗',
+  },
+};
+
+function t(key, vars) {
+  const lang = getObsidianUILanguage();
+  let s = (MB_I18N[lang] && MB_I18N[lang][key]) || MB_I18N.en[key] || key;
+  if (vars) for (const k of Object.keys(vars)) s = s.split('{' + k + '}').join(String(vars[k]));
+  return s;
+}
+
+const SOURCE_WHERE_OPS = ['is', 'isNot', 'contains', 'notContains', 'exists', 'notExists', '>', '>=', '<', '<=', 'matches'];
 
 function normalizeExternalWindowSettings(input = {}) {
   return {
@@ -134,6 +282,18 @@ async function renderMonthlyBoard(ctx = {}) {
   if (!dv || !app) throw new Error('MonthlyBoard requires { dv, app }.');
   const ROOT = ctx.container || dv.container;
   ROOT.classList?.add('monthly-journal-board');
+  if (typeof window !== 'undefined' && !ROOT.dataset.mjbGotoBound) {
+    ROOT.dataset.mjbGotoBound = '1';
+    window.addEventListener('mjb-calendar-goto', ev => {
+      const d = ev.detail;
+      if (!d || !Number.isFinite(d.year) || !Number.isFinite(d.month)) return;
+      state.year = d.year;
+      state.month = d.month;
+      state.selectedDate = ymd(d.year, d.month, 1);
+      saveState(state);
+      render();
+    });
+  }
   ROOT.style.width = '100%';
   ROOT.style.maxWidth = 'none';
   ROOT.style.maxHeight = 'calc(100vh - 92px)';
@@ -385,6 +545,19 @@ function make(tag, cls, text) {
   if (text !== undefined) setText(el, text);
   return el;
 }
+function appendClampText(li, text) {
+  const span = make('span', '', text);
+  if (String(text || '').length > 48) {
+    span.classList.add('mjb-clamp');
+    span.title = '点击展开/收起全文';
+    li.addEventListener('click', ev => {
+      if (ev.target.closest('a') || ev.target.closest('.mjb-grid-toggle')) return;
+      span.classList.toggle('is-expanded');
+    });
+  }
+  li.appendChild(span);
+  return span;
+}
 function safeUrl(url) {
   const raw = String(url || '').trim();
   if (!raw) return '';
@@ -515,23 +688,36 @@ function normalizeImageEntry(image) {
   if (typeof image === 'object') return makeImageEntry(image.url, image.key);
   return makeImageEntry(String(image), imageEntryKey(image));
 }
-function extractImageFromRaw(raw, filePath) {
+function extractImagesFromRaw(raw, filePath) {
   const candidates = [];
   const text = String(raw || '');
   for (const m of text.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)) candidates.push(m[1]);
   for (const m of text.matchAll(/!\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]/g)) candidates.push(`[[${m[1]}]]`);
 
+  const entries = [];
+  const seen = new Set();
   for (const candidate of candidates) {
     const val = String(candidate || '').trim();
     if (!val) continue;
-    if (/^https?:\/\//i.test(val)) return makeImageEntry(val, imageEntryKey(val));
-    const wiki = val.match(/^\[\[([^\]]+)\]\]$/);
-    const link = wiki ? wiki[1] : val;
-    const clean = link.split('|')[0].split('#')[0].trim();
-    const dest = resolveImageFile(clean, filePath);
-    if (dest) return makeImageEntry(app.vault.getResourcePath(dest), dest.path || clean);
+    let entry = null;
+    if (/^https?:\/\//i.test(val)) {
+      entry = makeImageEntry(val, imageEntryKey(val));
+    } else {
+      const wiki = val.match(/^\[\[([^\]]+)\]\]$/);
+      const link = wiki ? wiki[1] : val;
+      const clean = link.split('|')[0].split('#')[0].trim();
+      const dest = resolveImageFile(clean, filePath);
+      if (dest) entry = makeImageEntry(app.vault.getResourcePath(dest), dest.path || clean);
+    }
+    if (entry && !seen.has(entry.key)) {
+      seen.add(entry.key);
+      entries.push(entry);
+    }
   }
-  return null;
+  return entries;
+}
+function extractImageFromRaw(raw, filePath) {
+  return extractImagesFromRaw(raw, filePath)[0] || null;
 }
 function stripFrontmatter(raw) {
   return String(raw || '').replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
@@ -556,20 +742,64 @@ function dateFromValue(value) {
   const m = String(value).match(/\d{4}-\d{2}-\d{2}/);
   return m ? m[0] : '';
 }
-function pageDate(p) {
-  for (const key of DATE_FIELDS) {
+function pageDate(p, fields) {
+  for (const key of (fields || DATE_FIELDS)) {
     const d = dateFromValue(p[key]);
     if (d) return d;
   }
   return '';
+}
+// 属性值统一转字符串数组（兼容 dataview link / 日期 / 数组 / 空值）
+function propStrings(raw) {
+  const vals = Array.isArray(raw) ? raw : [raw];
+  return vals.map(v => {
+    if (v == null) return '';
+    if (typeof v === 'object') {
+      if (v.path) return String(v.path);
+      if (typeof v.toFormat === 'function') { try { return v.toFormat('yyyy-MM-dd'); } catch (e) {} }
+      return String(v);
+    }
+    return String(v);
+  });
+}
+// 开放式属性条件（AND 组合）。op: is/isNot/contains/notContains/exists/notExists/>/>=/</<=/matches
+function matchSourceWhere(p, where) {
+  if (!Array.isArray(where) || !where.length) return true;
+  return where.every(cond => {
+    if (!cond || !cond.field) return true;
+    const raw = p[cond.field];
+    const op = String(cond.op || 'is');
+    const val = cond.value == null ? '' : String(cond.value);
+    const strs = propStrings(raw);
+    switch (op) {
+      case 'is': return strs.some(s => s === val);
+      case 'isNot': return !strs.some(s => s === val);
+      case 'contains': return strs.some(s => s.includes(val));
+      case 'notContains': return !strs.some(s => s.includes(val));
+      case 'exists': return strs.some(s => s.trim() !== '');
+      case 'notExists': return !strs.some(s => s.trim() !== '');
+      case '>': return Number(raw) > Number(cond.value);
+      case '>=': case 'gte': return Number(raw) >= Number(cond.value);
+      case '<': return Number(raw) < Number(cond.value);
+      case '<=': case 'lte': return Number(raw) <= Number(cond.value);
+      case 'matches': try { return strs.some(s => new RegExp(val).test(s)); } catch (e) { return false; }
+      default: return true;
+    }
+  });
 }
 function addDayData(byDate, date, patch) {
   if (!date) return;
   const current = byDate.get(date) || { entries: [], related: [], images: [], path: '', raw: '', essay: '' };
   if (patch.entries) current.entries = uniqueItems([...current.entries, ...patch.entries]);
   if (patch.related) current.related = uniqueItems([...current.related, ...patch.related]);
+  const patchImages = [];
+  if (Array.isArray(patch.images)) patchImages.push(...patch.images);
   const imageEntry = normalizeImageEntry(patch.image);
-  if (imageEntry && !current.images.some(img => img.key === imageEntry.key)) current.images.push(imageEntry);
+  if (imageEntry) patchImages.push(imageEntry);
+  for (const img of patchImages) {
+    const entry = normalizeImageEntry(img);
+    if (entry && !current.images.some(existing => existing.key === entry.key)) current.images.push(entry);
+  }
   if (patch.path && !current.path) current.path = patch.path;
   if (patch.raw) current.raw = patch.raw;
   if (patch.essay) current.essay = patch.essay;
@@ -669,6 +899,18 @@ function stabilizeCalendarGrid(root) {
 }
 function syncZoomViewportBounds(viewport, frameHeight = 0) {
   if (!viewport) return;
+  const wrapperEl = viewport.parentElement;
+  if (viewport.closest?.('.markdown-preview-view.monthly-journal-board')) {
+    // 阅读模式：不限高度、不做内部滚动，滚动交给页面本身
+    viewport.style.maxHeight = 'none';
+    viewport.style.height = frameHeight > 0 ? `${frameHeight}px` : '';
+    if (wrapperEl?.classList?.contains('monthly-journal-board')) {
+      wrapperEl.style.maxHeight = 'none';
+      wrapperEl.style.height = '';
+      wrapperEl.style.overflow = 'visible';
+    }
+    return;
+  }
   const visual = window.visualViewport;
   const visualHeight = Math.floor(visual?.height || window.innerHeight || document.documentElement.clientHeight || 720);
   const top = Math.max(0, Math.floor(viewport.getBoundingClientRect?.().top || 0));
@@ -826,7 +1068,7 @@ async function loadMonthData(year, month) {
     ]);
     addDayData(byDate, p.file.name, {
       entries,
-      image: extractImageFromRaw(raw, p.file.path),
+      images: extractImagesFromRaw(raw, p.file.path),
       path: p.file.path,
       raw,
       essay: extractEssay(raw),
@@ -834,20 +1076,25 @@ async function loadMonthData(year, month) {
   }));
 
   const sources = SOURCE_CONFIGS;
-  for (const { query, label: source } of sources) {
-    const pages = dv.pages(query).where(p => {
-      const d = pageDate(p);
+  const pickStr = v => propStrings(v).find(s => s.trim()) || '';
+  for (const src of sources) {
+    const srcLabel = String(src.label || '其他');
+    const srcFields = Array.isArray(src.dateFields) && src.dateFields.length ? src.dateFields : null;
+    const pages = dv.pages(src.query || '').where(p => {
+      if (!matchSourceWhere(p, src.where)) return false;
+      const d = pageDate(p, srcFields);
       return d && d.startsWith(monthPrefix);
     }).array();
     await Promise.all(pages.map(async p => {
       const raw = await readPageRaw(p);
-      const d = pageDate(p);
-      const title = String(p.title || p.file.name || 'Untitled');
-      const status = String(p['状态'] || p.status || '');
-      const url = String(p.notion_url || p.url || '');
+      const d = pageDate(p, srcFields);
+      const source = (src.groupBy && pickStr(p[src.groupBy])) || srcLabel;
+      const title = (src.titleField && pickStr(p[src.titleField])) || String(p.title || p.file.name || 'Untitled');
+      const status = src.statusField ? pickStr(p[src.statusField]) : String(p['状态'] || p.status || '');
+      const url = src.urlField ? pickStr(p[src.urlField]) : String(p.notion_url || p.url || '');
       addDayData(byDate, d, {
         related: [{ id: String(p.notion_id || p.file.path), title: relatedLabel(source, title), status, url, source, path: p.file.path }],
-        image: extractImageFromRaw(raw, p.file.path),
+        images: extractImagesFromRaw(raw, p.file.path),
       });
     }));
   }
@@ -876,6 +1123,19 @@ function installStyles() {
 @import url('https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Ma+Shan+Zheng&display=swap');
 ${handFontFace}.monthly-journal-board { display: block; max-height: calc(100vh - 92px); overflow: hidden; }
 .markdown-preview-section:has(.monthly-journal-board) { max-width: 100% !important; }
+/* ── 阅读模式：隐藏内联标题 + 去掉阅读栏宽 padding，看板充满整个可视空间 ── */
+.markdown-preview-view.monthly-journal-board .inline-title { display: none; }
+.markdown-preview-view.monthly-journal-board .markdown-preview-sizer,
+.markdown-preview-view.monthly-journal-board .markdown-preview-section { width: 100% !important; max-width: 100% !important; padding-left: 0 !important; padding-right: 0 !important; margin-left: 0 !important; margin-right: 0 !important; }
+.markdown-preview-view.monthly-journal-board .markdown-preview-sizer { min-height: 100%; padding-top: 0 !important; padding-bottom: 0 !important; }
+.markdown-preview-view.monthly-journal-board .mjb-root { border-radius: 0; box-shadow: none; }
+.markdown-preview-view.monthly-journal-board .mjb-zoom-viewport { overflow: visible; max-height: none; scrollbar-gutter: auto; }
+.markdown-preview-view.monthly-journal-board { padding: 0 !important; }
+.view-content:has(.markdown-preview-view.monthly-journal-board) { padding: 0 !important; }
+.markdown-preview-view.monthly-journal-board .markdown-preview-section > div { margin: 0 !important; }
+.markdown-preview-view.monthly-journal-board .monthly-journal-board { margin: 0 !important; }
+.markdown-preview-view.monthly-journal-board::-webkit-scrollbar { width: 0 !important; height: 0 !important; background: transparent !important; }
+.markdown-preview-view.monthly-journal-board { scrollbar-width: none !important; }
 .mjb-root {
   --mjb-side: ${Math.max(150, Number(state.sideWidth) || 300)}px;
   --mjb-ink: #213729;
@@ -914,11 +1174,31 @@ ${handFontFace}.monthly-journal-board { display: block; max-height: calc(100vh -
 .mjb-root[data-theme="night"] .mjb-day:not(.has-image) .mjb-item { color: #f2f5ff; background: rgba(255,255,255,.16); }
 .mjb-root[data-theme="paper"] { --mjb-accent: #d7b16d; --mjb-accent-2: #c57f62; background: #fbf7ee; background-image: linear-gradient(rgba(85,70,45,.04) 1px, transparent 1px), linear-gradient(90deg, rgba(85,70,45,.035) 1px, transparent 1px); background-size: 28px 28px; }
 .mjb-root[data-theme="rose"] { --mjb-accent: #c78396; --mjb-accent-2: #9bbf88; --mjb-card: rgba(255, 252, 248, .84); --mjb-line: rgba(199,131,150,.22); background: #fff3f4; background-image: radial-gradient(circle at 90% 20%, rgba(199,131,150,.16), transparent 30%), radial-gradient(circle at 18% 88%, rgba(155,191,136,.16), transparent 30%); }
-.mjb-root[data-theme="ao3"] { --mjb-ink: #3f3a51; --mjb-muted: rgba(63,58,81,.62); --mjb-accent: #d96887; --mjb-accent-2: #3f9bb0; --mjb-card: rgba(255,250,244,.86); --mjb-line: rgba(196,129,145,.24); background: #fbf4eb; background-image: linear-gradient(180deg, rgba(255,249,241,.98), rgba(247,238,229,.88)), repeating-linear-gradient(0deg, rgba(102,88,104,.055) 0 1px, transparent 1px 30px); box-shadow: 0 18px 55px rgba(86,68,74,.14); }
-.mjb-root[data-theme="ao3"] .mjb-side, .mjb-root[data-theme="ao3"] .mjb-note-area { background: rgba(255,250,244,.62); border-color: rgba(196,129,145,.30); }
-.mjb-root[data-theme="ao3"] .mjb-month-tab.is-active { background: linear-gradient(90deg, #d96887, #e98aa1); color: #fffaf4; }
-.mjb-root[data-theme="ao3"] .mjb-item { background: linear-gradient(90deg, rgba(217,104,135,.20), rgba(63,155,176,.16)); }
-.mjb-root[data-theme="ao3"] .mjb-photo-count { background: rgba(255,250,244,.78); color: #3f3a51; }
+.mjb-root[data-theme="ao3"] { --mjb-ink: #3a2e2a; --mjb-muted: #8B7E72; --mjb-accent: #E07A8F; --mjb-accent-2: #2C3E64; --mjb-card: rgba(255,253,250,.94); --mjb-line: rgba(120,90,80,.18); background: #FAF6F0; background-image: linear-gradient(180deg, #FAF6F0, #F5EFE7); box-shadow: 0 12px 40px rgba(80,50,40,.10); }
+.mjb-root[data-theme="ao3"] .mjb-side, .mjb-root[data-theme="ao3"] .mjb-note-area { background: rgba(255,253,250,.82); border-color: rgba(120,90,80,.22); }
+.mjb-root[data-theme="ao3"] .mjb-title,
+.mjb-root[data-theme="ao3"] .mjb-title-link,
+.mjb-root[data-theme="ao3"] .mjb-title-link:visited { color: #E07A8F !important; font-weight: 700; }
+.mjb-root[data-theme="ao3"] .mjb-month-tab { color: #C95C76; background: transparent; border: 1px solid rgba(120,90,80,.20); }
+.mjb-root[data-theme="ao3"] .mjb-month-tab:hover { background: rgba(224,122,143,.12); }
+.mjb-root[data-theme="ao3"] .mjb-month-tab.is-active { background: linear-gradient(90deg, #E07A8F, #C95C76); color: #ffffff; border-color: transparent; }
+.mjb-root[data-theme="ao3"] .mjb-item { background: rgba(60,42,38,.62); color: #ffffff; border-radius: 4px; }
+.mjb-root[data-theme="ao3"] .mjb-day.has-image .mjb-item { background: rgba(40,28,25,.58); color: #ffffff; }
+.mjb-root[data-theme="ao3"] .mjb-day:not(.has-image) .mjb-item { background: rgba(70,52,46,.75); color: #ffffff; border: none; }
+.mjb-root[data-theme="ao3"] .mjb-more { color: #ffffff; font-weight: 600; }
+.mjb-root[data-theme="ao3"] .mjb-day:not(.has-image) .mjb-more { color: #E07A8F; }
+.mjb-root[data-theme="ao3"] .mjb-photo-count { background: #E07A8F; color: #ffffff; box-shadow: 0 1px 4px rgba(60,30,20,.18); }
+.mjb-root[data-theme="ao3"] .mjb-date { background: linear-gradient(135deg, #F0B968, #E07A8F); color: #ffffff; box-shadow: 0 1px 4px rgba(60,30,20,.18); }
+.mjb-root[data-theme="ao3"] a { color: #C95C76; }
+.mjb-root[data-theme="ao3"] a:hover { color: #E07A8F; }
+.mjb-root[data-theme="ao3"] .mjb-detail h1,
+.mjb-root[data-theme="ao3"] .mjb-detail h2,
+.mjb-root[data-theme="ao3"] .mjb-detail h3,
+.mjb-root[data-theme="ao3"] .mjb-detail h4 { color: #E07A8F !important; }
+.mjb-root[data-theme="ao3"] .mjb-side h1,
+.mjb-root[data-theme="ao3"] .mjb-side h2,
+.mjb-root[data-theme="ao3"] .mjb-side h3,
+.mjb-root[data-theme="ao3"] .mjb-side h4 { color: #E07A8F !important; }
 .mjb-root[data-theme="kitten"] { --mjb-ink: #3C5189; --mjb-muted: #819DCB; --mjb-accent: #8796BD; --mjb-accent-2: #5E6FA8; --mjb-card: rgba(237,243,255,.86); --mjb-line: rgba(135,150,189,.32); background: #CFDDF1; background-image: radial-gradient(circle at 12% 10%, rgba(255,255,255,.80), transparent 26%), radial-gradient(circle at 88% 86%, rgba(135,150,189,.20), transparent 32%), linear-gradient(180deg, rgba(237,243,255,.55), rgba(207,221,241,.28)); box-shadow: 0 18px 55px rgba(60,81,137,.16); }
 .mjb-root[data-theme="kitten"] .mjb-side, .mjb-root[data-theme="kitten"] .mjb-note-area { background: rgba(237,243,255,.66); border-color: rgba(135,150,189,.32); }
 .mjb-root[data-theme="kitten"] .mjb-month-tab.is-active { background: linear-gradient(90deg, #8796BD, #5E6FA8); color: #F1F5FF; }
@@ -934,8 +1214,8 @@ ${handFontFace}.monthly-journal-board { display: block; max-height: calc(100vh -
 .mjb-root[data-theme="custom"] .mjb-weekdays { color: rgba(247,251,255,.88); text-shadow: 0 2px 7px rgba(0,0,0,.72), 0 0 1px rgba(0,0,0,.9); }
 .mjb-root[data-theme="custom"] .mjb-month-tab { color: rgba(247,251,255,.88); background: rgba(15,27,43,.28); text-shadow: 0 1px 4px rgba(0,0,0,.45); }
 .mjb-root[data-theme="custom"] .mjb-month-tab.is-active { color: #19324a; background: rgba(238,247,255,.92); text-shadow: none; }
-.mjb-zoom-viewport { width: 100%; max-height: calc(100vh - 92px); overflow: auto; touch-action: pan-x pan-y; overscroll-behavior: contain; scrollbar-gutter: stable; -webkit-overflow-scrolling: touch; }
-.mjb-zoom-toolbar { position: sticky; top: 0; left: 0; z-index: 30; display: flex; justify-content: flex-end; width: 100%; box-sizing: border-box; padding: 0 0 8px; pointer-events: none; }
+.mjb-zoom-viewport { position: relative; width: 100%; max-height: calc(100vh - 92px); overflow: auto; touch-action: pan-x pan-y; overscroll-behavior: contain; scrollbar-gutter: stable; -webkit-overflow-scrolling: touch; }
+.mjb-zoom-toolbar { position: absolute; top: 6px; right: 6px; z-index: 30; display: flex; justify-content: flex-end; width: auto; box-sizing: border-box; padding: 0; pointer-events: none; }
 .mjb-zoom-toolbar .mjb-zoom-controls { pointer-events: auto; }
 .mjb-zoom-frame { position: relative; }
 .mjb-zoom-canvas { transform-origin: top left; width: 100%; max-width: none; will-change: transform; }
@@ -946,8 +1226,9 @@ ${handFontFace}.monthly-journal-board { display: block; max-height: calc(100vh -
 .mjb-head, .mjb-main { position: relative; z-index: 1; }
 .mjb-head { display: flex; gap: 16px; align-items: center; justify-content: space-between; margin-bottom: 18px; }
 .mjb-title { font-size: clamp(38px, 6vw, 78px); line-height: .86; font-family: Georgia, 'Times New Roman', serif; letter-spacing: -2px; }
-.mjb-title-link { color: inherit !important; text-decoration: none !important; cursor: pointer; border-radius: 14px; transition: background .16s ease, opacity .16s ease; }
-.mjb-title-link:hover { background: rgba(255,255,255,.22); opacity: .88; }
+.mjb-title-link { color: inherit !important; text-decoration: none !important; border: none !important; background: none !important; box-shadow: none !important; outline: none !important; padding: 0 !important; cursor: pointer; }
+.mjb-title-link:hover { opacity: .72; }
+.mjb-title-link:visited { color: inherit !important; }
 .mjb-subtitle { color: var(--mjb-muted); font-size: 12px; letter-spacing: .18em; text-transform: uppercase; margin-top: 8px; }
 .mjb-controls { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; max-width: 580px; }
 .mjb-controls button, .mjb-controls select, .mjb-controls input { border: 1px solid var(--mjb-line); background: rgba(255,255,255,.45); color: var(--mjb-ink); border-radius: 999px; padding: 7px 12px; font-size: 12px; backdrop-filter: blur(10px); }
@@ -978,6 +1259,8 @@ a.mjb-date:hover { filter: brightness(1.06); transform: translateY(-1px); }
 .mjb-day.has-image::after { content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none; background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,.02) 48%, rgba(0,0,0,.26) 100%); }
 .mjb-day:not(.has-image) .mjb-thumb { display: none; }
 .mjb-items { position: absolute; left: 7px; right: 7px; bottom: 7px; z-index: 2; display: flex; flex-direction: column; gap: 2px; }
+.mjb-day:not(.has-image) .mjb-items { top: 44px; bottom: auto; }
+.mjb-day:not(.has-image) .mjb-week-chip ~ .mjb-items { top: 62px; }
 .mjb-item { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-family: 'AaYouLongZeLingKeAiTi', 'Kalam', 'Ma Shan Zheng', 'Comic Sans MS', cursive; font-size: clamp(10px, 1vw, 12px); letter-spacing: .01em; color: var(--mjb-ink); background: linear-gradient(90deg, rgba(255,255,255,.30), rgba(255,255,255,.16)); border-radius: 8px; padding: 1px 5px; font-weight: 800; text-shadow: 0 1px 1px rgba(255,255,255,.42); box-shadow: 0 1px 4px rgba(0,0,0,.045); }
 .mjb-day.has-image .mjb-item { color: #f7fbff; background: linear-gradient(90deg, rgba(8,14,22,.50), rgba(8,14,22,.30)); text-shadow: 0 1px 2px rgba(0,0,0,.95), 0 0 1px rgba(0,0,0,.85); backdrop-filter: blur(.8px); }
 .mjb-more { font-family: 'AaYouLongZeLingKeAiTi', 'Kalam', 'Ma Shan Zheng', 'Comic Sans MS', cursive; font-size: clamp(10px, .95vw, 11px); color: var(--mjb-muted); margin-top: 1px; font-weight: 800; text-shadow: 0 1px 1px rgba(255,255,255,.36); }
@@ -1012,6 +1295,9 @@ a.mjb-date:hover { filter: brightness(1.06); transform: translateY(-1px); }
 .mjb-detail a { color: var(--mjb-ink) !important; }
 .mjb-detail-list { padding-left: 18px; margin-top: 8px; }
 .mjb-detail-list li { margin: 6px 0; line-height: 1.42; }
+.mjb-clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; cursor: pointer; }
+span.mjb-clamp.is-expanded { display: inline; -webkit-line-clamp: unset; overflow: visible; }
+p.mjb-clamp.is-expanded { display: block; -webkit-line-clamp: unset; overflow: visible; }
 .mjb-grid-toggle { display: inline-flex; align-items: center; justify-content: center; width: 12px; height: 12px; margin-left: 3px; color: var(--mjb-muted); cursor: pointer; font: 900 10px/1 Georgia, serif; opacity: .34; vertical-align: .08em; user-select: none; }
 .mjb-grid-toggle.is-hidden { color: var(--mjb-accent-2); opacity: .78; }
 .mjb-grid-toggle:hover { color: var(--mjb-ink); opacity: .9; }
@@ -1049,8 +1335,10 @@ a.mjb-date:hover { filter: brightness(1.06); transform: translateY(-1px); }
   .mjb-week-chip { top: 24px; left: 4px; padding: 0 3px; font-size: 7px; }
   .mjb-photo-count { top: 4px; right: 4px; gap: 1px; padding: 2px 4px; font-size: 8px; }
   .mjb-items { left: 4px; right: 4px; bottom: 4px; gap: 1px; }
-  .mjb-item { font-size: clamp(7px, 1.8cqi, 10px); line-height: 1.22; border-radius: 6px; padding: 0 3px; }
-  .mjb-more { font-size: clamp(7px, 1.6cqi, 9px); line-height: 1.15; }
+  .mjb-day:not(.has-image) .mjb-items { top: 32px; bottom: auto; }
+  .mjb-day:not(.has-image) .mjb-week-chip ~ .mjb-items { top: 46px; }
+  .mjb-item { font-size: clamp(6px, 1.4cqi, 9px); line-height: 1.18; border-radius: 6px; padding: 1px 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.2px; }
+  .mjb-more { font-size: clamp(6px, 1.3cqi, 8px); line-height: 1.15; }
   .mjb-side { height: min(70vh, 560px); max-height: min(70vh, 560px); padding: 10px; border-radius: 18px; }
   .mjb-side h3 { font-size: 20px; }
   .mjb-side-toggle { padding: 4px 7px; }
@@ -1075,8 +1363,9 @@ a.mjb-date:hover { filter: brightness(1.06); transform: translateY(-1px); }
   .mjb-week-chip { display: none; }
   .mjb-photo-count { top: 3px; right: 3px; padding: 1px 3px; font-size: 7px; }
   .mjb-items { left: 3px; right: 3px; bottom: 3px; }
-  .mjb-item { font-size: 7px; line-height: 1.16; padding: 0 2px; border-radius: 5px; }
-  .mjb-more { font-size: 7px; line-height: 1.1; }
+  .mjb-day:not(.has-image) .mjb-items { top: 26px; bottom: auto; }
+  .mjb-item { font-size: 6px; line-height: 1.14; padding: 1px 2px; border-radius: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.2px; }
+  .mjb-more { font-size: 6px; line-height: 1.1; }
   .mjb-side { padding: 8px; border-radius: 16px; }
   .mjb-side h3 { font-size: 18px; }
   .mjb-note-area { min-height: 52px; max-height: 76px; padding: 8px; }
@@ -1135,23 +1424,77 @@ function configureInternalLink(el, pathText) {
   return el;
 }
 
+function configureExternalLink(el, url) {
+  const u = safeUrl(url);
+  el.href = u;
+  el.classList.add('external-link');
+  el.target = '_blank';
+  el.rel = 'noopener nofollow';
+  el.title = u;
+  el.onclick = ev => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    window.open(u, '_blank');
+  };
+  return el;
+}
+
+function syncCalendarPlugin(year, month) {
+  try {
+    const momentRef = window.moment;
+    if (!momentRef) return false;
+    let firstLeaf = null;
+    for (const viewType of ['calendar-plus-view', 'calendar']) {
+      const leaves = app.workspace.getLeavesOfType?.(viewType) || [];
+      for (const leaf of leaves) {
+        const cal = leaf.view?.calendar;
+        if (cal && typeof cal.$set === 'function') {
+          cal.$set({ displayedMonth: momentRef(new Date(year, month, 1)) });
+          firstLeaf = firstLeaf || leaf;
+        }
+      }
+    }
+    if (firstLeaf) {
+      app.workspace.revealLeaf?.(firstLeaf);
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.warn('[monthly-board] calendar sync failed', err);
+    return false;
+  }
+}
+
 function fillPopover(pop, info, dateStr) {
   pop.textContent = '';
   pop.appendChild(make('div', 'mjb-pop-title', dateStr));
   const ul = make('ul');
   for (const item of info.entries || []) {
     const li = make('li');
-    setText(li, `${item.time ? item.time + ' · ' : ''}${item.title}`);
-    if (safeUrl(item.url)) {
+    appendClampText(li, `${item.time ? item.time + ' · ' : ''}${item.title}`);
+    if (info.path) {
+      li.appendChild(document.createTextNode(' '));
+      const a = configureInternalLink(make('a', 'internal-link', '↗'), info.path);
+      a.title = '打开当日日记';
+      li.appendChild(a);
+    } else if (safeUrl(item.url)) {
       li.appendChild(document.createTextNode(' '));
       const a = make('a', '', '↗');
-      a.href = safeUrl(item.url);
+      configureExternalLink(a, item.url);
       li.appendChild(a);
     }
     ul.appendChild(li);
   }
   pop.appendChild(ul);
-  if (info.essay) pop.appendChild(make('p', '', info.essay));
+  if (info.essay) {
+    const essayP = make('p', '', info.essay);
+    if (String(info.essay).length > 48) {
+      essayP.classList.add('mjb-clamp');
+      essayP.title = '点击展开/收起全文';
+      essayP.addEventListener('click', () => essayP.classList.toggle('is-expanded'));
+    }
+    pop.appendChild(essayP);
+  }
 }
 
 function placePopover(pop, card) {
@@ -1293,11 +1636,16 @@ function renderDetail(side, data, dateStr) {
     for (const item of day.entries) {
       const li = make('li');
       const prefix = `${item.time ? item.time + ' · ' : ''}${item.title}`;
-      setText(li, prefix);
-      if (safeUrl(item.url)) {
+      appendClampText(li, prefix);
+      if (day.path) {
+        li.appendChild(document.createTextNode(' '));
+        const a = configureInternalLink(make('a', 'internal-link', '↗'), day.path);
+        a.title = '打开当日日记';
+        li.appendChild(a);
+      } else if (safeUrl(item.url)) {
         li.appendChild(document.createTextNode(' '));
         const a = make('a', '', '↗');
-        a.href = safeUrl(item.url);
+        configureExternalLink(a, item.url);
         li.appendChild(a);
       }
       addGridToggle(li, item);
@@ -1307,27 +1655,45 @@ function renderDetail(side, data, dateStr) {
   }
   if (day.related?.length) {
     detail.appendChild(make('h4', '', '关联条目'));
-    const ul = make('ul', 'mjb-detail-list');
+    const groups = new Map();
     for (const item of day.related) {
-      const li = make('li');
-      setText(li, item.title);
-      if (item.path) {
-        li.appendChild(document.createTextNode(' '));
-        li.appendChild(configureInternalLink(make('a', 'internal-link', '↗'), item.path));
-      } else if (safeUrl(item.url)) {
-        li.appendChild(document.createTextNode(' '));
-        const a = make('a', '', '↗');
-        a.href = safeUrl(item.url);
-        li.appendChild(a);
-      }
-      addGridToggle(li, item);
-      ul.appendChild(li);
+      const source = String(item.source || '其他');
+      if (!groups.has(source)) groups.set(source, []);
+      groups.get(source).push(item);
     }
-    detail.appendChild(ul);
+    for (const [source, items] of groups) {
+      detail.appendChild(makeGroupTitle(source, items));
+      const ul = make('ul', 'mjb-detail-list');
+      for (const item of items) {
+        const li = make('li');
+        appendClampText(li, item.title);
+        if (item.path) {
+          li.appendChild(document.createTextNode(' '));
+          li.appendChild(configureInternalLink(make('a', 'internal-link', '↗'), item.path));
+        } else if (safeUrl(item.url)) {
+          li.appendChild(document.createTextNode(' '));
+          const a = make('a', '', '↗');
+          configureExternalLink(a, item.url);
+          li.appendChild(a);
+        }
+        addGridToggle(li, item);
+        ul.appendChild(li);
+      }
+      detail.appendChild(ul);
+    }
   }
 }
 
 async function render() {
+  const goto = typeof window !== 'undefined' ? window.__mjbCalendarGoto : null;
+  if (goto) {
+    window.__mjbCalendarGoto = null;
+    if (Date.now() - goto.ts < 8000 && Number.isFinite(goto.year) && Number.isFinite(goto.month)) {
+      state.year = goto.year;
+      state.month = goto.month;
+      state.selectedDate = ymd(goto.year, goto.month, 1);
+    }
+  }
   installStyles();
   saveState(state);
   const monthData = await loadMonthData(state.year, state.month);
@@ -1362,11 +1728,19 @@ async function render() {
   const head = make('div', 'mjb-head');
   const titleWrap = make('div');
   const title = make('div', 'mjb-title');
+  const boardPath = dv.current()?.file?.path || '';
   const monthPath = monthNotePath(state.year, state.month);
   const yearPath = yearNotePath(state.year);
-  const monthTitle = make(monthPath ? 'a' : 'span', monthPath ? 'internal-link mjb-title-link' : '', MONTHS_CN[state.month]);
-  if (monthPath) configureInternalLink(monthTitle, monthPath);
-  const yearTitle = make(yearPath ? 'a' : 'span', yearPath ? 'internal-link mjb-title-link' : '', state.year);
+  const monthTitle = make('a', 'mjb-title-link', MONTHS_CN[state.month]);
+  monthTitle.title = '侧边日历跳转到该月';
+  monthTitle.onclick = ev => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (syncCalendarPlugin(state.year, state.month)) return;
+    if (monthPath) { app.workspace.openLinkText(monthPath, dv.current()?.file?.path || '', false); return; }
+    if (boardPath) app.workspace.openLinkText(boardPath, dv.current()?.file?.path || '', false);
+  };
+  const yearTitle = make(yearPath ? 'a' : 'span', yearPath ? 'mjb-title-link' : '', state.year);
   if (yearPath) configureInternalLink(yearTitle, yearPath);
   title.append(monthTitle, document.createTextNode(' '), yearTitle);
   titleWrap.appendChild(title);
@@ -1431,7 +1805,7 @@ async function render() {
   const grid = make('div', 'mjb-grid');
   const offset = firstMondayOffset(state.year, state.month);
   const totalDays = daysInMonth(state.year, state.month);
-  const weeks = Math.ceil((offset + totalDays) / 7);
+  const weeks = 6; // 固定六行：切换月份时网格行数恒定，页面高度不跳动
   for (let weekRow = 0; weekRow < weeks; weekRow++) {
     const monday = new Date(state.year, state.month, 1 - offset + weekRow * 7);
     const weekInfo = isoWeekInfo(monday);
@@ -1566,6 +1940,75 @@ if (typeof module !== 'undefined') module.exports = api;
   return module.exports;
 }
 
+// ===== Glass external window (route A: transparent acrylic snapshot) =====
+const GLASS_CHROME_CSS = `
+html,body{margin:0;padding:0;height:100%;background:transparent;overflow:hidden;font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;}
+*{box-sizing:border-box;}
+.mjbg-shell{position:fixed;inset:9px;display:flex;flex-direction:column;border-radius:22px;overflow:hidden;
+  background:rgba(22,24,32,.34);
+  border:1px solid rgba(255,255,255,.20);
+  box-shadow:0 26px 80px rgba(0,0,0,.46), inset 0 1px 0 rgba(255,255,255,.26), inset 0 0 0 .5px rgba(255,255,255,.08);
+  backdrop-filter:blur(30px) saturate(168%); -webkit-backdrop-filter:blur(30px) saturate(168%);}
+.mjbg-shell::after{content:'';position:absolute;inset:0;pointer-events:none;border-radius:22px;
+  background:linear-gradient(160deg, rgba(255,255,255,.10), rgba(255,255,255,0) 38%);}
+.mjbg-chrome{position:relative;z-index:2;flex:0 0 auto;height:40px;display:flex;align-items:center;justify-content:space-between;
+  padding:0 9px 0 16px;-webkit-app-region:drag;background:rgba(255,255,255,.05);border-bottom:1px solid rgba(255,255,255,.10);}
+.mjbg-title{font-size:12px;font-weight:700;letter-spacing:.05em;color:rgba(255,255,255,.80);text-shadow:0 1px 2px rgba(0,0,0,.45);}
+.mjbg-actions{display:flex;gap:6px;-webkit-app-region:no-drag;}
+.mjbg-btn{-webkit-app-region:no-drag;width:27px;height:27px;border:1px solid rgba(255,255,255,.20);border-radius:999px;
+  background:rgba(255,255,255,.10);color:rgba(255,255,255,.88);font-size:13px;line-height:1;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;transition:background .15s,transform .1s;}
+.mjbg-btn:hover{background:rgba(255,255,255,.24);}
+.mjbg-btn:active{transform:scale(.9);}
+.mjbg-btn.is-active{background:rgba(120,180,255,.42);border-color:rgba(160,205,255,.66);color:#fff;}
+.mjbg-stage{position:relative;z-index:1;flex:1 1 auto;min-height:0;overflow:auto;padding:12px;}
+.mjbg-stage .mjb-root{margin:0!important;max-height:none!important;height:auto!important;width:100%!important;box-shadow:none!important;}
+.mjbg-stage::-webkit-scrollbar{width:9px;height:9px;}
+.mjbg-stage::-webkit-scrollbar-thumb{background:rgba(255,255,255,.24);border-radius:9px;}
+.mjbg-stage::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.38);}
+.mjbg-stage::-webkit-scrollbar-track{background:transparent;}
+`;
+
+const GLASS_RUNTIME_JS = `
+(function(){
+  var electron=null, remote=null;
+  try{ electron=require('electron'); }catch(e){}
+  try{ remote=require('@electron/remote'); }catch(e){ try{ remote=electron&&electron.remote; }catch(_){} }
+  function curWin(){ try{ return remote&&remote.getCurrentWindow?remote.getCurrentWindow():null; }catch(e){ return null; } }
+  function flagPath(){
+    try{
+      var p=decodeURIComponent(location.pathname).replace(/^\\/+/,'');
+      var dir=p.substring(0,p.replace(/\\\\/g,'/').lastIndexOf('/'));
+      return dir+'/_glass-refresh.flag';
+    }catch(e){ return null; }
+  }
+  var pinned=true;
+  document.addEventListener('click', function(ev){
+    var btn=ev.target.closest && ev.target.closest('.mjbg-btn');
+    if(btn){
+      var act=btn.getAttribute('data-act');
+      if(act==='close'){ var w=curWin(); if(w){try{w.close();}catch(e){}} else { try{window.close();}catch(e){} } return; }
+      if(act==='pin'){ var w2=curWin(); pinned=!pinned; if(w2){try{w2.setAlwaysOnTop(pinned,'floating');}catch(e){}} btn.classList.toggle('is-active',pinned); return; }
+      if(act==='refresh'){
+        try{ var fs=require('fs'); var fp=flagPath(); if(fp) fs.writeFileSync(fp, String(Date.now()), 'utf8'); }catch(e){ console.error(e); }
+        btn.classList.add('is-active'); setTimeout(function(){btn.classList.remove('is-active');},520);
+        return;
+      }
+    }
+    var link=ev.target.closest && ev.target.closest('[data-href]');
+    if(link){
+      ev.preventDefault(); ev.stopPropagation();
+      var href=link.getAttribute('data-href')||'';
+      if(href){
+        var url='obsidian://open?vault=__VAULT__&file='+encodeURIComponent(href.replace(/\\.md$/,''));
+        try{ var sh=(electron&&electron.shell)?electron.shell:require('electron').shell; sh.openExternal(url); }catch(e){ console.error(e); }
+      }
+    }
+  }, true);
+  (function(){ var w=curWin(); if(w){ try{ w.setAlwaysOnTop(true,'floating'); }catch(e){} } var pb=document.querySelector('.mjbg-btn[data-act="pin"]'); if(pb) pb.classList.add('is-active'); })();
+})();
+`;
+
 module.exports = class MonthlyBoardPlugin extends Plugin {
   async onload() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
@@ -1577,7 +2020,7 @@ module.exports = class MonthlyBoardPlugin extends Plugin {
 
     this.addCommand({
       id: 'insert-monthly-board-block',
-      name: 'Insert monthly board block',
+      name: t('cmdInsert'),
       editorCallback: editor => {
         editor.replaceSelection('```monthly-board\nconfig: ' + this.settings.configPath + '\n```\n');
       },
@@ -1585,47 +2028,78 @@ module.exports = class MonthlyBoardPlugin extends Plugin {
 
     this.addCommand({
       id: 'inspect-monthly-board-entry',
-      name: 'Inspect monthly board entry',
+      name: t('cmdInspect'),
       callback: () => this.inspectMonthlyBoardEntry(),
     });
 
     this.addCommand({
       id: 'toggle-floating-monthly-board',
-      name: 'Toggle in-app floating monthly board',
+      name: t('cmdToggleFloating'),
       callback: () => this.toggleFloatingBoard(),
     });
 
     this.addCommand({
       id: 'open-monthly-board-via-hover-editor',
-      name: 'Open monthly board floating note (Hover Editor)',
-      callback: () => this.openMonthlyBoardViaHoverEditor().catch(error => this.showFailure('Hover Editor open failed', error)),
+      name: t('cmdHover'),
+      callback: () => this.openMonthlyBoardViaHoverEditor().catch(error => this.showFailure(t('failHover'), error)),
     });
 
     this.addCommand({
       id: 'open-monthly-board-popout',
-      name: 'Open monthly board in popout window',
-      callback: () => this.openMonthlyBoardPopout().catch(error => this.showFailure('Popout open failed', error)),
+      name: t('cmdPopout'),
+      callback: () => this.openMonthlyBoardPopout().catch(error => this.showFailure(t('failPopout'), error)),
     });
 
     this.addCommand({
       id: 'refit-monthly-board-popout',
-      name: 'Refit monthly board popout (强制重算缩放)',
+      name: t('cmdRefit'),
       callback: () => this.refitAllMonthlyBoardPopouts(),
     });
 
     this.addCommand({
       id: 'open-monthly-board-glass',
-      name: 'Open glass monthly board (透明玻璃悬浮窗)',
-      callback: () => this.openGlassBoard().catch(error => this.showFailure('Glass board open failed', error)),
+      name: t('cmdOpenGlass'),
+      callback: () => this.openGlassBoard().catch(error => this.showFailure(t('failGlassOpen'), error)),
     });
 
     this.addCommand({
       id: 'refresh-monthly-board-glass',
-      name: 'Refresh glass monthly board (刷新玻璃悬浮窗数据)',
-      callback: () => this.refreshGlassBoard({ force: true }).catch(error => this.showFailure('Glass board refresh failed', error)),
+      name: t('cmdRefreshGlass'),
+      callback: () => this.refreshGlassBoard().catch(error => this.showFailure(t('failGlassRefresh'), error)),
     });
 
 
+
+    // 点击侧边日历小部件（Calendar Plus / Calendar）的月份标题 → 打开月历总览并切到对应月份（可在设置中关闭）
+    this.registerDomEvent(document, 'click', ev => {
+      if (!this.settings.calendarGotoMonthlyBoard) return;
+      const leafContent = ev.target?.closest?.('.workspace-leaf-content[data-type="calendar-plus-view"], .workspace-leaf-content[data-type="calendar"]');
+      if (!leafContent) return;
+      const h3 = ev.target.closest('h3');
+      if (!h3 || !leafContent.contains(h3)) return;
+      const leaf = [
+        ...(this.app.workspace.getLeavesOfType?.('calendar-plus-view') || []),
+        ...(this.app.workspace.getLeavesOfType?.('calendar') || []),
+      ].find(l => l.view?.containerEl === leafContent);
+      let info = null;
+      try {
+        const m = leaf?.view?.calendar?.$$?.ctx?.[0];
+        if (m && typeof m.year === 'function' && typeof m.month === 'function') info = { year: m.year(), month: m.month() };
+      } catch {}
+      if (!info) {
+        const text = h3.textContent || '';
+        const year = Number(text.match(/\d{4}/)?.[0]);
+        const zh = text.match(/(\d{1,2})\s*月/);
+        const en = text.match(/Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec/i);
+        const monthNum = zh ? Number(zh[1]) : (en ? 'janfebmaraprmayjunjulaugsepoctnovdec'.indexOf(en[0].toLowerCase()) / 3 + 1 : NaN);
+        if (year && monthNum >= 1 && monthNum <= 12) info = { year, month: monthNum - 1 };
+      }
+      if (!info) return;
+      window.__mjbCalendarGoto = { year: info.year, month: info.month, ts: Date.now() };
+      window.dispatchEvent(new CustomEvent('mjb-calendar-goto', { detail: { year: info.year, month: info.month } }));
+      const dest = this.app.metadataCache.getFirstLinkpathDest('月历总览', '');
+      this.app.workspace.openLinkText(dest?.path || '月历总览.md', '', false);
+    });
 
     this.addSettingTab(new MonthlyBoardSettingTab(this.app, this));
     this.registerEvent(this.app.workspace.on('file-open', () => this.enforceReadingModeSoon()));
@@ -1691,7 +2165,7 @@ module.exports = class MonthlyBoardPlugin extends Plugin {
   async inspectMonthlyBoardEntry() {
     const entry = await this.getMonthlyBoardEntry();
     await this.loadJsonConfig(entry.configPath);
-    new Notice(`Monthly Board entry OK: ${entry.sourcePath} -> ${entry.configPath}`);
+    new Notice(t('noticeEntryOk', { src: entry.sourcePath, cfg: entry.configPath }));
   }
 
 
@@ -1779,7 +2253,7 @@ module.exports = class MonthlyBoardPlugin extends Plugin {
       this.startPopoutAutoFit(leaf);
       touched += 1;
     });
-    new Notice(`Monthly Board: refit ${touched} popout(s).`, 3000);
+    new Notice(t('noticeRefit', { n: touched }), 3000);
   }
 
   startPopoutAutoFit(leaf) {
@@ -1951,234 +2425,65 @@ module.exports = class MonthlyBoardPlugin extends Plugin {
     if (!base) throw new Error('玻璃悬浮窗需要桌面版 Obsidian（FileSystemAdapter）。');
     const path = require('path');
     const dir = path.join(base, (this.manifest && this.manifest.dir) || '.obsidian/plugins/monthly-board');
-    return { dir, html: path.join(dir, '_glass-snapshot.html'), flag: path.join(dir, '_glass-refresh.flag'), nav: path.join(dir, '_glass-nav.flag') };
+    return { dir, html: path.join(dir, '_glass-snapshot.html'), flag: path.join(dir, '_glass-refresh.flag') };
   }
 
-  // 玻璃窗默认月份：优先用主看板已保存的月，否则当月。
-  defaultGlassMonth() {
-    try {
-      const raw = localStorage.getItem(DEFAULT_CONFIG.stateKey);
-      if (raw) {
-        const s = JSON.parse(raw);
-        if (Number.isInteger(s.year) && Number.isInteger(s.month)) return { year: s.year, month: s.month };
-      }
-    } catch {}
-    const d = new Date();
-    return { year: d.getFullYear(), month: d.getMonth() };
-  }
-
-  // app://<hash>/<encoded-abs-path>?<mtime> → file:///<abs-path>
-  // app:// 是 Obsidian 主窗口私有协议，独立 BrowserWindow（file:// 上下文）无法加载。
-  glassResolveAppUrl(u) {
-    const s = String(u || '');
-    if (!s.startsWith('app://')) return s;
-    const rest = s.slice('app://'.length);
-    const slash = rest.indexOf('/');
-    if (slash < 0) return s;
-    let p = rest.slice(slash + 1);
-    const q = p.indexOf('?');
-    if (q >= 0) p = p.slice(0, q);
-    let abs;
-    try { abs = decodeURIComponent(p); } catch { abs = p; }
-    try { return require('url').pathToFileURL(abs).href; } catch { return s; }
-  }
-
-  // 把快照子树里所有 app:// 引用（img src + 内联 background-image + CSS 变量）就地转成 file://
-  glassRewriteAssetUrls(root) {
-    root.querySelectorAll('img[src]').forEach(img => {
-      img.setAttribute('src', this.glassResolveAppUrl(img.getAttribute('src')));
-      img.removeAttribute('loading');
-    });
-    const fixStyle = el => {
-      const st = el.getAttribute && el.getAttribute('style');
-      if (st && st.includes('app://')) {
-        el.setAttribute('style', st.replace(/app:\/\/[^\s"')]+/g, m => this.glassResolveAppUrl(m)));
-      }
-    };
-    fixStyle(root);
-    root.querySelectorAll('[style*="app://"]').forEach(fixStyle);
-  }
-
-  // 在离屏容器里完整渲染一次月历，序列化 .mjb-root 的静态 HTML，
-  // 并逐格 click 捕获每天右栏详情，供玻璃窗实现「点击切换」。
-  async renderGlassSnapshotRoot(targetMonth) {
-    const sleep = ms => new Promise(resolve => window.setTimeout(resolve, ms));
+  // 在离屏容器里完整渲染一次月历，序列化 .mjb-root 的静态 HTML。
+  async renderGlassSnapshotRoot() {
     const host = document.body.createDiv();
     host.setAttribute('style', 'position:fixed;left:-100000px;top:0;width:1180px;pointer-events:none;opacity:0;z-index:-1;');
-    let savedStateRaw = null, stateOverridden = false, stateKey = null;
     try {
       const { config, dv } = await this.loadBoardRenderContext(host);
-      // 临时把目标月份写进 localStorage，让渲染器渲染指定月；快照结束后原样还原，
-      // 不影响用户主看板的真实状态（主看板不会因 localStorage 变动自动重渲）。
-      if (targetMonth && Number.isInteger(targetMonth.year) && Number.isInteger(targetMonth.month)) {
-        stateKey = config.stateKey || DEFAULT_CONFIG.stateKey;
-        try {
-          savedStateRaw = localStorage.getItem(stateKey);
-          const st = savedStateRaw ? JSON.parse(savedStateRaw) : {};
-          st.year = targetMonth.year;
-          st.month = targetMonth.month;
-          st.selectedDate = `${targetMonth.year}-${String(targetMonth.month + 1).padStart(2, '0')}-01`;
-          localStorage.setItem(stateKey, JSON.stringify(st));
-          stateOverridden = true;
-        } catch (e) { console.error('[Monthly Board] glass month override failed', e); }
-      }
       await this.loadRenderer().render({ app: this.app, dv, container: host, config });
       // 等渲染 + 图片(app://)落定
-      await sleep(450);
+      await new Promise(resolve => window.setTimeout(resolve, 450));
       const root = host.querySelector('.mjb-root') || host.querySelector('.monthly-journal-board');
       if (!root) throw new Error('快照渲染失败：找不到 .mjb-root。');
-
-      // ── 逐格捕获每天右栏（详情 + 笔记），asset url 即时重写为 file:// ──
-      const details = {};
-      const detailEl = root.querySelector('.mjb-side .mjb-detail');
-      const noteEl = root.querySelector('.mjb-side .mjb-note-area');
-      const cells = Array.from(root.querySelectorAll('.mjb-day[data-date]'));
-      const selStart = root.querySelector('.mjb-day.is-selected[data-date]');
-      const origDate = (selStart && selStart.getAttribute('data-date'))
-        || (cells[0] && cells[0].getAttribute('data-date')) || '';
-      if (detailEl) {
-        for (const cell of cells) {
-          const date = cell.getAttribute('data-date');
-          try { cell.click(); } catch (e) { /* noop */ }
-          await sleep(130);
-          this.glassRewriteAssetUrls(detailEl);
-          details[date] = {
-            detail: detailEl.innerHTML,
-            note: noteEl ? (noteEl.value || '') : '',
-            ph: noteEl ? (noteEl.placeholder || '') : '',
-          };
-        }
-        // 复位到原选中日，保证默认渲染 = 原状态，state.selectedDate 不被改写
-        const origCell = origDate && root.querySelector('.mjb-day[data-date="' + origDate + '"]');
-        if (origCell) { try { origCell.click(); } catch (e) {} await sleep(150); }
-      }
-
-      this.glassRewriteAssetUrls(root);
-      return { rootHtml: root.outerHTML, details };
+      return root.outerHTML;
     } finally {
-      if (stateOverridden && stateKey) {
-        try {
-          if (savedStateRaw === null) localStorage.removeItem(stateKey);
-          else localStorage.setItem(stateKey, savedStateRaw);
-        } catch (e) { console.error('[Monthly Board] glass state restore failed', e); }
-      }
       host.remove();
     }
   }
 
-  buildGlassHtml(rootHtml, details, monthInfo) {
+  buildGlassHtml(rootHtml) {
     const styleNode = document.getElementById('monthly-journal-board-style');
     const css = (styleNode && styleNode.textContent) || '';
     const vaultName = this.app.vault.getName();
-    const mi = monthInfo || this.defaultGlassMonth();
-    const label = `${mi.year}年${mi.month + 1}月`;
-    const script = GLASS_RUNTIME_JS
-      .replace(/__VAULT__/g, encodeURIComponent(vaultName))
-      .replace(/__YEAR__/g, String(mi.year))
-      .replace(/__MONTH__/g, String(mi.month));
-    // 嵌入每天右栏详情 JSON，转义 < 以免提前闭合 script。
-    const detailsJson = JSON.stringify(details || {}).replace(/</g, '\\u003c');
+    const script = GLASS_RUNTIME_JS.replace('__VAULT__', encodeURIComponent(vaultName));
     return '<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8">'
       + '<meta name="viewport" content="width=device-width,initial-scale=1">'
       + '<style>' + css + '</style><style>' + GLASS_CHROME_CSS + '</style></head><body>'
       + '<div class="mjbg-shell">'
-      + '<div class="mjbg-chrome">'
-      + '<div class="mjbg-nav">'
-      + '<button class="mjbg-btn" data-act="prev" title="上一月">&#8249;</button>'
-      + '<span class="mjbg-title" id="mjbg-month-label">' + label + '</span>'
-      + '<button class="mjbg-btn" data-act="next" title="下一月">&#8250;</button>'
-      + '<button class="mjbg-btn" data-act="today" title="回到本月">&#8226;</button>'
-      + '</div>'
+      + '<div class="mjbg-chrome"><span class="mjbg-title">月历总览</span>'
       + '<div class="mjbg-actions">'
       + '<button class="mjbg-btn" data-act="refresh" title="刷新数据">&#8635;</button>'
       + '<button class="mjbg-btn" data-act="pin" title="置顶切换">&#128204;</button>'
       + '<button class="mjbg-btn" data-act="close" title="关闭">&#10005;</button>'
       + '</div></div>'
-      + '<div class="mjbg-stage"><div class="mjbg-fit"><div class="mjbg-sizer">' + rootHtml + '</div></div></div>'
-      + '<div class="mjbg-loading" id="mjbg-loading"><div class="mjbg-spinner"></div><div class="mjbg-loading-txt">载入中…</div></div>'
-      + '<div class="mjbg-busy" id="mjbg-busy"></div>'
+      + '<div class="mjbg-stage">' + rootHtml + '</div>'
       + '</div>'
-      + '<script type="application/json" id="mjbg-day-details">' + detailsJson + '</' + 'script>'
       + '<script>' + script + '</' + 'script></body></html>';
   }
 
-  async writeGlassHtml(opts) {
+  async writeGlassHtml() {
     const fs = require('fs');
     const { html } = this.glassPaths();
-    if (!this.glassMonth) this.glassMonth = this.defaultGlassMonth();
-    const { rootHtml, details } = await this.getGlassSnapshot(this.glassMonth, opts);
-    fs.writeFileSync(html, this.buildGlassHtml(rootHtml, details, this.glassMonth), 'utf8');
+    const rootHtml = await this.renderGlassSnapshotRoot();
+    fs.writeFileSync(html, this.buildGlassHtml(rootHtml), 'utf8');
     return html;
   }
-
-  // 月份快照缓存（方案2）：翻月优先复用已拍过的月（opts.cache=true），秒开不重渲；
-  // 首开/刷新走实拍并覆盖缓存。缓存上限 6 个月（覆盖前后几个月秒翻足够，内存峰值 <~6MB），
-  // 超出按最早插入淘汰；存的是纯文本（HTML+详情文字），图片走 file:// 引用不进内存；
-  // 关窗即整体清空（invalidateGlassCache），不开窗 = 0 占用。
-  async getGlassSnapshot(month, opts) {
-    opts = opts || {};
-    if (!this.glassCache) this.glassCache = new Map();
-    const key = month.year + '-' + month.month;
-    if (opts.cache && this.glassCache.has(key)) return this.glassCache.get(key);
-    const snap = await this.renderGlassSnapshotRoot(month);
-    this.glassCache.delete(key);
-    this.glassCache.set(key, snap);
-    if (this.glassCache.size > 6) {
-      const oldest = this.glassCache.keys().next().value;
-      this.glassCache.delete(oldest);
-    }
-    return snap;
-  }
-
-  // 预热：当前月显示完后，后台悄悄把前一月 / 后一月也拍进缓存，让翻月秒开。
-  // - 延迟 350ms 触发，先让当前页丝滑显示，避免抢 CPU 造成当前页卡顿；
-  // - 串行预拍（一个拍完再拍下一个），不并发；
-  // - token 机制：每次预热递增 token，用户快速连翻时旧预热在 await 边界自动让位，不堆积；
-  // - 已缓存的邻月直接跳过；窗口已关或销毁则停止。
-  prefetchAround(month) {
-    if (!month) return;
-    const token = (this._prefetchToken = (this._prefetchToken || 0) + 1);
-    const shift = (delta) => {
-      let y = month.year, m = month.month + delta;
-      while (m < 0) { m += 12; y--; }
-      while (m > 11) { m -= 12; y++; }
-      return { year: y, month: m };
-    };
-    const targets = [shift(-1), shift(1)];
-    const run = async () => {
-      for (const m of targets) {
-        if (token !== this._prefetchToken) return; // 有更新的翻月，放弃这轮旧预热
-        if (!this.glassWin || (this.glassWin.isDestroyed && this.glassWin.isDestroyed())) return;
-        if (!this.glassCache) this.glassCache = new Map();
-        const key = m.year + '-' + m.month;
-        if (this.glassCache.has(key)) continue; // 已缓存，跳过
-        try { await this.getGlassSnapshot(m, { cache: true }); }
-        catch (e) { console.error('[Monthly Board] prefetch failed', e); }
-      }
-    };
-    window.setTimeout(() => { run().catch(() => {}); }, 350);
-  }
-
-  // 主看板数据可能已变，清空缓存让翻月重新实拍。
-  invalidateGlassCache() { if (this.glassCache) this.glassCache.clear(); }
 
   startGlassRefreshWatch() {
     if (this.glassWatching) return;
     const fs = require('fs');
-    const { flag, nav } = this.glassPaths();
+    const { flag } = this.glassPaths();
     try { if (!fs.existsSync(flag)) fs.writeFileSync(flag, '0', 'utf8'); } catch {}
-    try { if (!fs.existsSync(nav)) fs.writeFileSync(nav, '0', 'utf8'); } catch {}
     try {
       fs.watchFile(flag, { interval: 600 }, (curr, prev) => {
         if (curr.mtimeMs === prev.mtimeMs) return;
-        this.refreshGlassBoard({ force: true }).catch(error => console.error('[Monthly Board] glass refresh failed', error));
-      });
-      fs.watchFile(nav, { interval: 400 }, (curr, prev) => {
-        if (curr.mtimeMs === prev.mtimeMs) return;
-        this.handleGlassNav().catch(error => console.error('[Monthly Board] glass nav failed', error));
+        this.refreshGlassBoard().catch(error => console.error('[Monthly Board] glass refresh failed', error));
       });
       this.glassFlagPath = flag;
-      this.glassNavPath = nav;
       this.glassWatching = true;
     } catch (error) {
       console.warn('[Monthly Board] glass watch failed', error);
@@ -2186,44 +2491,23 @@ module.exports = class MonthlyBoardPlugin extends Plugin {
   }
 
   stopGlassRefreshWatch() {
-    const fs = require('fs');
-    if (this.glassFlagPath) { try { fs.unwatchFile(this.glassFlagPath); } catch {} }
-    if (this.glassNavPath) { try { fs.unwatchFile(this.glassNavPath); } catch {} }
+    if (this.glassFlagPath) {
+      try { require('fs').unwatchFile(this.glassFlagPath); } catch {}
+    }
     this.glassFlagPath = null;
-    this.glassNavPath = null;
     this.glassWatching = false;
   }
 
-  // 玻璃窗翻月：读取 nav flag 里的目标月份，更新 glassMonth 后重渲快照。
-  async handleGlassNav() {
+  async refreshGlassBoard() {
     if (!this.glassWin || (this.glassWin.isDestroyed && this.glassWin.isDestroyed())) return;
-    const fs = require('fs');
-    const { nav } = this.glassPaths();
-    let raw = '';
-    try { raw = fs.readFileSync(nav, 'utf8'); } catch { return; }
-    const m = String(raw).split('|')[0].trim().match(/^(\d{4})-(\d{1,2})$/);
-    if (!m) return;
-    const year = Number(m[1]);
-    const month = Number(m[2]) - 1;
-    if (!Number.isInteger(year) || month < 0 || month > 11) return;
-    this.glassMonth = { year, month };
-    await this.refreshGlassBoard({ cache: true });
-  }
-
-  async refreshGlassBoard(opts) {
-    opts = opts || {};
-    if (!this.glassWin || (this.glassWin.isDestroyed && this.glassWin.isDestroyed())) return;
-    if (opts.force) this.invalidateGlassCache();
-    const html = await this.writeGlassHtml(opts);
+    const html = await this.writeGlassHtml();
     try { await this.glassWin.loadFile(html); } catch (error) { console.error('[Monthly Board] glass reload failed', error); }
-    // 当前月已显示，后台预热前后两月（不阻塞）
-    this.prefetchAround(this.glassMonth);
   }
 
   async openGlassBoard() {
     if (this.glassWin && !(this.glassWin.isDestroyed && this.glassWin.isDestroyed())) {
       try { this.glassWin.show(); this.glassWin.focus(); } catch {}
-      await this.refreshGlassBoard({ force: true });
+      await this.refreshGlassBoard();
       return;
     }
 
@@ -2233,7 +2517,6 @@ module.exports = class MonthlyBoardPlugin extends Plugin {
     const BrowserWindow = remote && remote.BrowserWindow;
     if (!BrowserWindow) throw new Error('无法访问 Electron BrowserWindow（@electron/remote 不可用）。');
 
-    this.glassMonth = this.defaultGlassMonth();
     const html = await this.writeGlassHtml();
     const ext = normalizeExternalWindowSettings(this.settings.externalWindow);
     const onTop = ext.alwaysOnTop !== false;
@@ -2244,7 +2527,7 @@ module.exports = class MonthlyBoardPlugin extends Plugin {
       frame: false,
       transparent: true,
       backgroundColor: '#00000000',
-      hasShadow: false,
+      hasShadow: true,
       resizable: true,
       maximizable: false,
       minimizable: true,
@@ -2257,17 +2540,14 @@ module.exports = class MonthlyBoardPlugin extends Plugin {
 
     try { remote.enable && remote.enable(win.webContents); } catch {}
     try { win.setMenuBarVisibility(false); } catch {}
-    // 不要 setBackgroundMaterial('acrylic')：Windows 上 acrylic 按整个矩形窗口绘制，
-    // 会无视 CSS 圆角画出一圈方灰底。玻璃质感完全交给 CSS 的 backdrop-filter blur。
+    try { win.setBackgroundMaterial && win.setBackgroundMaterial('acrylic'); } catch {}
     if (onTop) { try { win.setAlwaysOnTop(true, 'floating'); } catch {} }
 
     this.glassWin = win;
-    win.on('closed', () => { if (this.glassWin === win) { this.glassWin = null; this.stopGlassRefreshWatch(); this.invalidateGlassCache(); } });
+    win.on('closed', () => { if (this.glassWin === win) { this.glassWin = null; this.stopGlassRefreshWatch(); } });
 
     await win.loadFile(html);
     this.startGlassRefreshWatch();
-    // 首开完成，后台预热前后两月，翻月即秒开
-    this.prefetchAround(this.glassMonth);
   }
 
   closeGlassBoard() {
@@ -2312,9 +2592,14 @@ module.exports = class MonthlyBoardPlugin extends Plugin {
     };
   }
 
+  applySettingsOverrides(config) {
+    if (Array.isArray(this.settings.sourcesOverride)) config.sources = this.settings.sourcesOverride;
+    return config;
+  }
+
   async loadBoardRenderContext(container) {
     const entry = await this.getMonthlyBoardEntry();
-    const config = await this.loadJsonConfig(entry.configPath);
+    const config = this.applySettingsOverrides(await this.loadJsonConfig(entry.configPath));
     config.plugin = Object.assign({}, config.plugin, { writeNotesToMarkdown: !!this.settings.writeNotesToMarkdown });
     return { entry, config, dv: this.getDataviewShim(container, entry.sourcePath) };
   }
@@ -2323,7 +2608,7 @@ module.exports = class MonthlyBoardPlugin extends Plugin {
     el.empty();
     try {
       const options = parseCodeBlock(source);
-      const config = await this.loadJsonConfig(options.config || this.settings.configPath);
+      const config = this.applySettingsOverrides(await this.loadJsonConfig(options.config || this.settings.configPath));
       config.plugin = Object.assign({}, config.plugin, {
         writeNotesToMarkdown: !!this.settings.writeNotesToMarkdown,
       });
@@ -2344,7 +2629,7 @@ module.exports = class MonthlyBoardPlugin extends Plugin {
       return;
     }
     this.openFloatingBoard().catch(error => {
-      new Notice('Monthly Board floating panel failed: ' + (error?.message || error));
+      new Notice(t('noticeFloatingFailed') + (error?.message || error));
       console.error(error);
     });
   }
@@ -2361,9 +2646,9 @@ module.exports = class MonthlyBoardPlugin extends Plugin {
     const header = panel.createDiv({ cls: 'monthly-board-floating-head' });
     header.createSpan({ text: 'Monthly Board' });
     const buttons = header.createDiv({ cls: 'monthly-board-floating-buttons' });
-    const refresh = buttons.createEl('button', { text: '↻', attr: { 'aria-label': 'Refresh floating monthly board' } });
-    const minimize = buttons.createEl('button', { text: '−', attr: { 'aria-label': 'Minimize floating monthly board' } });
-    const close = buttons.createEl('button', { text: '×', attr: { 'aria-label': 'Close floating monthly board' } });
+    const refresh = buttons.createEl('button', { text: '↻', attr: { 'aria-label': t('ariaRefresh') } });
+    const minimize = buttons.createEl('button', { text: '−', attr: { 'aria-label': t('ariaMinimize') } });
+    const close = buttons.createEl('button', { text: '×', attr: { 'aria-label': t('ariaClose') } });
     const body = panel.createDiv({ cls: 'monthly-board-floating-body' });
     this.floatingPanel = panel;
     refresh.onclick = () => this.renderFloatingBoard(body).catch(console.error);
@@ -2425,15 +2710,15 @@ class MonthlyBoardSettingTab extends PluginSettingTab {
     containerEl.createEl('h2', { text: 'Monthly Board' });
 
     new Setting(containerEl)
-      .setName('Default config path')
-      .setDesc('Relative path to a JSON config file in this vault.')
+      .setName(t('setConfigName'))
+      .setDesc(t('setConfigDesc'))
       .addText(text => text
         .setPlaceholder('_tools/monthly-board/monthly-board.config.json')
         .setValue(this.plugin.settings.configPath)
         .onChange(async value => {
           const next = value.trim() || DEFAULT_SETTINGS.configPath;
           if (!isSafeVaultPath(next) || !next.endsWith('.json')) {
-            new Notice('Monthly Board config must be a relative .json path.');
+            new Notice(t('noticeConfigPath'));
             return;
           }
           this.plugin.settings.configPath = normalizePath(next);
@@ -2441,15 +2726,15 @@ class MonthlyBoardSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl)
-      .setName('Floating board source note')
-      .setDesc('Relative .md note path used by both in-app and external floating Monthly Board windows.')
+      .setName(t('setFloatSrcName'))
+      .setDesc(t('setFloatSrcDesc'))
       .addText(text => text
         .setPlaceholder('Journal/月历总览.md')
         .setValue(this.plugin.settings.floatingSourcePath || DEFAULT_SETTINGS.floatingSourcePath)
         .onChange(async value => {
           const next = value.trim() || DEFAULT_SETTINGS.floatingSourcePath;
           if (!isSafeVaultPath(next) || !next.endsWith('.md')) {
-            new Notice('Floating source must be a relative .md path.');
+            new Notice(t('noticeFloatSrc'));
             return;
           }
           this.plugin.settings.floatingSourcePath = normalizePath(next);
@@ -2459,8 +2744,8 @@ class MonthlyBoardSettingTab extends PluginSettingTab {
 
 
     new Setting(containerEl)
-      .setName('Force reading mode for Monthly Board notes')
-      .setDesc('When opening a note containing a monthly-board code block, switch that tab back to Reading view.')
+      .setName(t('setForceReadingName'))
+      .setDesc(t('setForceReadingDesc'))
       .addToggle(toggle => toggle
         .setValue(!!this.plugin.settings.forceReadingMode)
         .onChange(async value => {
@@ -2470,8 +2755,8 @@ class MonthlyBoardSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl)
-      .setName('Legacy monthly Notes toggle')
-      .setDesc('Notes now save to the selected daily note automatically. This legacy toggle only affects old monthly-note storage.')
+      .setName(t('setLegacyName'))
+      .setDesc(t('setLegacyDesc'))
       .addToggle(toggle => toggle
         .setValue(!!this.plugin.settings.writeNotesToMarkdown)
         .onChange(async value => {
@@ -2479,15 +2764,25 @@ class MonthlyBoardSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
-    containerEl.createEl('h3', { text: '玻璃悬浮窗 (Glass board)' });
+    new Setting(containerEl)
+      .setName(t('setCalGotoName'))
+      .setDesc(t('setCalGotoDesc'))
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.calendarGotoMonthlyBoard !== false)
+        .onChange(async value => {
+          this.plugin.settings.calendarGotoMonthlyBoard = value;
+          await this.plugin.saveSettings();
+        }));
+
+    containerEl.createEl('h3', { text: t('glassHeading') });
     containerEl.createEl('p', {
-      text: '透明无边框、Win11 亚克力毛玻璃的独立桌面窗口。显示当前月历快照（静态），点格子用 obsidian:// 跳回 Obsidian 编辑；窗内 ↻ 刷新数据、📌 置顶、✕ 关闭。',
+      text: t('glassIntro'),
       attr: { style: 'margin:.2em 0 .8em;color:var(--text-muted);font-size:12px;line-height:1.5;' },
     });
 
     new Setting(containerEl)
-      .setName('Glass window width / height')
-      .setDesc('玻璃悬浮窗初始尺寸（px）。')
+      .setName(t('setGlassSizeName'))
+      .setDesc(t('setGlassSizeDesc'))
       .addText(text => text
         .setPlaceholder('860')
         .setValue(String(this.plugin.settings.externalWindow.width))
@@ -2504,8 +2799,8 @@ class MonthlyBoardSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl)
-      .setName('Glass window always on top')
-      .setDesc('打开时默认置顶（可在窗内用 📌 切换）。')
+      .setName(t('setGlassTopName'))
+      .setDesc(t('setGlassTopDesc'))
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.externalWindow.alwaysOnTop !== false)
         .onChange(async value => {
@@ -2514,14 +2809,137 @@ class MonthlyBoardSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl)
-      .setName('打开玻璃悬浮窗')
-      .setDesc('等同命令面板里的 “Open glass monthly board”。')
+      .setName(t('setGlassOpenName'))
+      .setDesc(t('setGlassOpenDesc'))
       .addButton(btn => btn
-        .setButtonText('打开 / 刷新玻璃窗')
+        .setButtonText(t('glassOpenButton'))
         .setCta()
-        .onClick(() => this.plugin.openGlassBoard().catch(error => this.plugin.showFailure('Glass board open failed', error))));
+        .onClick(() => this.plugin.openGlassBoard().catch(error => this.plugin.showFailure(t('failGlassOpen'), error))));
 
+    containerEl.createEl('h3', { text: t('srcSecHeading') });
+    containerEl.createEl('p', {
+      text: t('srcSecDesc'),
+      attr: { style: 'margin:.2em 0 .8em;color:var(--text-muted);font-size:12px;line-height:1.5;' },
+    });
+    const srcHost = containerEl.createDiv();
+    this.renderSourcesEditor(srcHost).catch(error => {
+      srcHost.setText(t('srcLoadFailed'));
+      console.error('[Monthly Board] sources editor failed', error);
+    });
     this.renderCustomThemes(containerEl);
+  }
+
+  async getEffectiveSources() {
+    if (Array.isArray(this.plugin.settings.sourcesOverride)) return { list: this.plugin.settings.sourcesOverride, isOverride: true };
+    try {
+      const cfg = await this.plugin.loadJsonConfig(this.plugin.settings.configPath);
+      if (Array.isArray(cfg.sources)) return { list: cfg.sources, isOverride: false };
+    } catch (e) {}
+    return null;
+  }
+
+  async renderSourcesEditor(host) {
+    host.empty();
+    const effective = await this.getEffectiveSources();
+    if (!effective) {
+      host.createDiv({ text: t('srcLoadFailed'), attr: { style: 'color:var(--text-error);font-size:12px;' } });
+      return;
+    }
+    const { list, isOverride } = effective;
+    host.createDiv({
+      text: t(isOverride ? 'srcFromOverride' : 'srcFromFile'),
+      attr: { style: 'color:var(--text-muted);font-size:12px;margin-bottom:6px;' },
+    });
+
+    const ensureOverride = () => {
+      if (!Array.isArray(this.plugin.settings.sourcesOverride)) {
+        this.plugin.settings.sourcesOverride = JSON.parse(JSON.stringify(list));
+      }
+      return this.plugin.settings.sourcesOverride;
+    };
+    const save = () => this.plugin.saveSettings();
+    const rerender = () => this.renderSourcesEditor(host).catch(console.error);
+
+    list.forEach((src, idx) => {
+      const card = host.createDiv({ cls: 'mjb-src-card' });
+
+      new Setting(card)
+        .addText(text => text
+          .setPlaceholder(t('phLabel'))
+          .setValue(String(src.label || ''))
+          .onChange(async v => { ensureOverride()[idx].label = v; await save(); }))
+        .addText(text => text
+          .setPlaceholder(t('phQuery'))
+          .setValue(String(src.query || ''))
+          .onChange(async v => { const o = ensureOverride()[idx]; if (v.trim()) o.query = v; else delete o.query; await save(); }))
+        .addButton(btn => btn
+          .setButtonText(t('srcDelete'))
+          .setWarning()
+          .onClick(async () => { ensureOverride().splice(idx, 1); await save(); rerender(); }));
+
+      new Setting(card)
+        .addText(text => text
+          .setPlaceholder(t('phGroupBy'))
+          .setValue(String(src.groupBy || ''))
+          .onChange(async v => { const o = ensureOverride()[idx]; if (v.trim()) o.groupBy = v.trim(); else delete o.groupBy; await save(); }))
+        .addText(text => text
+          .setPlaceholder(t('phDateFields'))
+          .setValue(Array.isArray(src.dateFields) ? src.dateFields.join(', ') : '')
+          .onChange(async v => {
+            const arr = v.split(/[,，]/).map(s => s.trim()).filter(Boolean);
+            const o = ensureOverride()[idx];
+            if (arr.length) o.dateFields = arr; else delete o.dateFields;
+            await save();
+          }));
+
+      new Setting(card)
+        .addText(text => text
+          .setPlaceholder(t('phTitleField'))
+          .setValue(String(src.titleField || ''))
+          .onChange(async v => { const o = ensureOverride()[idx]; if (v.trim()) o.titleField = v.trim(); else delete o.titleField; await save(); }))
+        .addText(text => text
+          .setPlaceholder(t('phStatusField'))
+          .setValue(String(src.statusField || ''))
+          .onChange(async v => { const o = ensureOverride()[idx]; if (v.trim()) o.statusField = v.trim(); else delete o.statusField; await save(); }))
+        .addText(text => text
+          .setPlaceholder(t('phUrlField'))
+          .setValue(String(src.urlField || ''))
+          .onChange(async v => { const o = ensureOverride()[idx]; if (v.trim()) o.urlField = v.trim(); else delete o.urlField; await save(); }));
+
+      card.createDiv({ cls: 'mjb-src-conds-label', text: t('srcCondsLabel') });
+      (Array.isArray(src.where) ? src.where : []).forEach((cond, ci) => {
+        const row = card.createDiv({ cls: 'mjb-src-cond' });
+        const fieldInput = row.createEl('input', { attr: { type: 'text', placeholder: t('phCondField') } });
+        fieldInput.value = String(cond.field || '');
+        fieldInput.onchange = async () => { ensureOverride()[idx].where[ci].field = fieldInput.value; await save(); };
+        const opSel = row.createEl('select');
+        for (const op of SOURCE_WHERE_OPS) opSel.createEl('option', { attr: { value: op }, text: op });
+        opSel.value = String(cond.op || 'is');
+        opSel.onchange = async () => { ensureOverride()[idx].where[ci].op = opSel.value; await save(); };
+        const valInput = row.createEl('input', { attr: { type: 'text', placeholder: t('phCondValue') } });
+        valInput.value = cond.value == null ? '' : String(cond.value);
+        valInput.onchange = async () => { ensureOverride()[idx].where[ci].value = valInput.value; await save(); };
+        const delBtn = row.createEl('button', { text: '×', attr: { 'aria-label': t('srcDelete') } });
+        delBtn.onclick = async () => { ensureOverride()[idx].where.splice(ci, 1); await save(); rerender(); };
+      });
+      const addCondBtn = card.createEl('button', { cls: 'mjb-src-addcond', text: t('srcAddCond') });
+      addCondBtn.onclick = async () => {
+        const o = ensureOverride()[idx];
+        o.where = [...(Array.isArray(o.where) ? o.where : []), { field: '', op: 'is', value: '' }];
+        await save();
+        rerender();
+      };
+    });
+
+    new Setting(host)
+      .addButton(btn => btn
+        .setButtonText(t('srcAdd'))
+        .setCta()
+        .onClick(async () => { ensureOverride().push({ label: '', query: '', where: [] }); await save(); rerender(); }))
+      .addButton(btn => btn
+        .setButtonText(t('srcRestoreFile'))
+        .setDisabled(!isOverride)
+        .onClick(async () => { this.plugin.settings.sourcesOverride = null; await save(); rerender(); }));
   }
 
   async renderCustomThemes(containerEl) {
