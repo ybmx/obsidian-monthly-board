@@ -1283,7 +1283,7 @@ a.mjb-date:hover { filter: brightness(1.06); transform: translateY(-1px); }
 .mjb-day.has-image .mjb-item { color: #f7fbff; background: linear-gradient(90deg, rgba(8,14,22,.50), rgba(8,14,22,.30)); text-shadow: 0 1px 2px rgba(0,0,0,.95), 0 0 1px rgba(0,0,0,.85); backdrop-filter: blur(.8px); }
 .mjb-more { font-family: 'AaYouLongZeLingKeAiTi', 'Kalam', 'Ma Shan Zheng', 'Comic Sans MS', cursive; font-size: clamp(10px, .95vw, 11px); color: var(--mjb-muted); margin-top: 1px; font-weight: 800; text-shadow: 0 1px 1px rgba(255,255,255,.36); }
 .mjb-day.has-image .mjb-more { color: rgba(247,251,255,.96); text-shadow: 0 1px 2px rgba(0,0,0,.95), 0 0 1px rgba(0,0,0,.85); }
-.mjb-photo-count { position: absolute; top: 7px; right: 7px; z-index: 3; display: inline-flex; align-items: center; gap: 3px; padding: 3px 6px; border: none; border-radius: 999px; background: rgba(255,255,255,.68); color: #263347; font-size: 10px; font-weight: 800; box-shadow: 0 2px 10px rgba(0,0,0,.16); cursor: pointer; transition: background .15s, transform .1s; }
+.mjb-photo-count { position: absolute; top: 7px; right: 7px; z-index: 3; display: inline-flex; align-items: center; gap: 3px; padding: 3px 6px; border-radius: 999px; background: rgba(255,255,255,.68); color: #263347; font-size: 10px; font-weight: 800; box-shadow: 0 2px 10px rgba(0,0,0,.16); cursor: pointer; user-select: none; transition: background .15s, transform .1s; }
 .mjb-photo-count:hover { background: rgba(255,255,255,.92); }
 .mjb-photo-count:active { transform: scale(.92); }
 .mjb-pop { display: none; position: fixed; left: 0; top: 0; width: clamp(240px, 30vw, 360px); max-height: min(420px, calc(100vh - 48px)); overflow: auto; padding: 12px; border-radius: 16px; background: rgba(28, 39, 31, .94); color: #fff; box-shadow: 0 18px 42px rgba(0,0,0,.25); backdrop-filter: blur(10px); z-index: 9999; }
@@ -1865,8 +1865,11 @@ async function render() {
         card.appendChild(img);
         const count = (info.images || []).length;
         if (count > 1) {
-          const badge = make('button', 'mjb-photo-count', `▦ ${count}`);
+          const badge = make('div', 'mjb-photo-count', `▦ ${count}`);
           badge.title = '展开当天全部照片';
+          badge.setAttribute('role', 'button');
+          badge.tabIndex = 0;
+          badge.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); badge.click(); } };
           badge.onclick = ev => {
             ev.preventDefault(); ev.stopPropagation();
             state.selectedDate = dateStr;
