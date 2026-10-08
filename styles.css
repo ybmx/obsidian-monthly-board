@@ -13,7 +13,11 @@
 }
 
 /* 设置页：关联条目来源编辑器 */
-.mjb-src-card { border: 1px solid var(--background-modifier-border); border-radius: 10px; padding: 4px 10px 10px; margin: 10px 0; }
+.mjb-src-card { position: relative; border: 1px solid var(--background-modifier-border); border-radius: 10px; padding: 4px 10px 10px 28px; margin: 10px 0; }
+.mjb-src-card.is-drop-target { border-color: var(--interactive-accent); box-shadow: 0 0 0 1px var(--interactive-accent); }
+.mjb-src-drag { position: absolute; left: 7px; top: 12px; cursor: grab; color: var(--text-faint); font-size: 12px; letter-spacing: -3px; user-select: none; line-height: 1; padding: 2px 1px; }
+.mjb-src-drag:hover { color: var(--text-muted); }
+.mjb-src-drag:active { cursor: grabbing; }
 .mjb-src-card .setting-item { border: none; padding: 8px 0; }
 .mjb-src-conds-label { font-size: 12px; color: var(--text-muted); margin: 6px 0 2px; }
 .mjb-src-cond { display: flex; gap: 6px; align-items: center; margin: 4px 0; }

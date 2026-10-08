@@ -96,7 +96,8 @@ const MB_I18N = {
     setCalGotoName: 'Calendar widget month-title opens Monthly Board',
     setCalGotoDesc: 'Clicking the month title (e.g. "Oct 2026") in the sidebar calendar widget opens the monthly board at that month. When off, clicks keep the calendar plugin\'s own behavior (create/open monthly note).',
     srcSecHeading: 'Related entry sources',
-    srcSecDesc: 'Controls where "related entries" are read from and how they are grouped. Editing here saves a settings override that takes precedence over the JSON config file.',
+    srcSecDesc: 'Controls where "related entries" are read from and how they are grouped. Card order = group display order on the board (drag the ⋮⋮ handle to reorder). Editing here saves a settings override that takes precedence over the JSON config file.',
+    srcDragHint: 'Drag to reorder (order = group display order)',
     srcFromFile: 'Current: JSON config file',
     srcFromOverride: 'Current: settings override (takes precedence over config file)',
     srcLoadFailed: 'Failed to load sources from the config file.',
@@ -156,7 +157,8 @@ const MB_I18N = {
     setCalGotoName: '日历小部件月份标题跳转月历看板',
     setCalGotoDesc: '点击侧边日历小部件的月份标题（如「10月 2026」）时，打开月历总览并切到对应月份。关闭后点击保持日历插件原有行为（创建/打开月记）。',
     srcSecHeading: '关联条目来源',
-    srcSecDesc: '决定「关联条目」从哪些笔记读取、如何分组。在这里编辑会保存为设置覆盖，优先于 JSON 配置文件。',
+    srcSecDesc: '决定「关联条目」从哪些笔记读取、如何分组。卡片顺序 = 看板上分组的显示顺序（拖 ⋮⋮ 手柄调整）。在这里编辑会保存为设置覆盖，优先于 JSON 配置文件。',
+    srcDragHint: '拖拽调整顺序（顺序即分组显示顺序）',
     srcFromFile: '当前生效：JSON 配置文件',
     srcFromOverride: '当前生效：设置覆盖（优先于配置文件）',
     srcLoadFailed: '从配置文件读取来源失败。',
@@ -2885,6 +2887,25 @@ class MonthlyBoardSettingTab extends PluginSettingTab {
 
     list.forEach((src, idx) => {
       const card = host.createDiv({ cls: 'mjb-src-card' });
+
+      const dragHandle = card.createDiv({ cls: 'mjb-src-drag', text: '⋮⋮', attr: { title: t('srcDragHint'), role: 'button' } });
+      dragHandle.draggable = true;
+      dragHandle.ondragstart = ev => {
+        ev.dataTransfer.setData('text/plain', String(idx));
+        ev.dataTransfer.effectAllowed = 'move';
+      };
+      card.ondragover = ev => { ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; card.classList.add('is-drop-target'); };
+      card.ondragleave = () => card.classList.remove('is-drop-target');
+      card.ondrop = ev => {
+        ev.preventDefault();
+        card.classList.remove('is-drop-target');
+        const from = Number(ev.dataTransfer.getData('text/plain'));
+        if (!Number.isInteger(from) || from === idx) return;
+        const arr = ensureOverride();
+        const [moved] = arr.splice(from, 1);
+        arr.splice(idx, 0, moved);
+        save().then(rerender);
+      };
 
       new Setting(card)
         .addText(text => text
