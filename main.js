@@ -13,6 +13,7 @@ const DEFAULT_SETTINGS = {
   floatingSourcePath: 'Monthly Board.md',
   calendarGotoMonthlyBoard: true,
   strikeDoneItems: false,
+  strikeDoneStatuses: [],
   sourcesOverride: null,
   externalWindow: {
     width: 860,
@@ -98,6 +99,8 @@ const MB_I18N = {
     setCalGotoDesc: 'Clicking the month title (e.g. "Oct 2026") in the sidebar calendar widget opens the monthly board at that month. When off, clicks keep the calendar plugin\'s own behavior (create/open monthly note).',
     setStrikeDoneName: 'Strike through completed items',
     setStrikeDoneDesc: 'Items whose status is done are shown struck-through and grayed out in day cells and the detail panel. Off by default.',
+    setStrikeListName: 'Extra status names treated as done',
+    setStrikeListDesc: 'Comma-separated. Exact match on the status property value; built-in rules (完成/done/complete…) always apply too. Leave empty to use built-in only.',
     srcSecHeading: 'Related entry sources',
     srcSecDesc: 'Controls where "related entries" are read from and how they are grouped. Card order = group display order on the board (drag the ⋮⋮ handle to reorder). Editing here saves a settings override that takes precedence over the JSON config file.',
     srcDragHint: 'Drag to reorder (order = group display order)',
@@ -161,6 +164,8 @@ const MB_I18N = {
     setCalGotoDesc: '点击侧边日历小部件的月份标题（如「10月 2026」）时，打开月历看板笔记并切到对应月份。关闭后点击保持日历插件原有行为（创建/打开月记）。',
     setStrikeDoneName: '完成条目划线变灰',
     setStrikeDoneDesc: '状态为「完成」的条目在日期格子和右侧详情里显示为删除线+变灰。默认关闭。',
+    setStrikeListName: '额外算作「完成」的状态名',
+    setStrikeListDesc: '逗号分隔，精确匹配条目的状态属性值；内置规则（完成/已完成/done/complete）始终生效。留空=只用内置规则。',
     srcSecHeading: '关联条目来源',
     srcSecDesc: '决定「关联条目」从哪些笔记读取、如何分组。卡片顺序 = 看板上分组的显示顺序（拖 ⋮⋮ 手柄调整）。在这里编辑会保存为设置覆盖，优先于 JSON 配置文件。',
     srcDragHint: '拖拽调整顺序（顺序即分组显示顺序）',
@@ -412,7 +417,12 @@ function strikeDoneEnabled() {
   return !!config.plugin?.strikeDoneItems;
 }
 function doneCls(item) {
-  return strikeDoneEnabled() && isDone(item?.status) ? ' mjb-done' : '';
+  if (!strikeDoneEnabled()) return '';
+  const s = String(item?.status || '').trim();
+  if (!s) return '';
+  const custom = Array.isArray(config.plugin?.strikeDoneStatuses) ? config.plugin.strikeDoneStatuses : [];
+  if (custom.some(v => String(v).trim() === s)) return ' mjb-done';
+  return isDone(s) ? ' mjb-done' : '';
 }
 const MONTH_NOTE_BEGIN = '<!-- MONTHLY-BOARD-NOTES:BEGIN -->';
 const MONTH_NOTE_END = '<!-- MONTHLY-BOARD-NOTES:END -->';
@@ -2660,7 +2670,7 @@ module.exports = class MonthlyBoardPlugin extends Plugin {
   async loadBoardRenderContext(container) {
     const entry = await this.getMonthlyBoardEntry();
     const config = this.applySettingsOverrides(await this.loadJsonConfig(entry.configPath));
-    config.plugin = Object.assign({}, config.plugin, { writeNotesToMarkdown: !!this.settings.writeNotesToMarkdown, strikeDoneItems: !!this.settings.strikeDoneItems });
+    config.plugin = Object.assign({}, config.plugin, { writeNotesToMarkdown: !!this.settings.writeNotesToMarkdown, strikeDoneItems: !!this.settings.strikeDoneItems, strikeDoneStatuses: Array.isArray(this.settings.strikeDoneStatuses) ? this.settings.strikeDoneStatuses : [] });
     return { entry, config, dv: this.getDataviewShim(container, entry.sourcePath) };
   }
 
@@ -2672,6 +2682,7 @@ module.exports = class MonthlyBoardPlugin extends Plugin {
       config.plugin = Object.assign({}, config.plugin, {
         writeNotesToMarkdown: !!this.settings.writeNotesToMarkdown,
         strikeDoneItems: !!this.settings.strikeDoneItems,
+        strikeDoneStatuses: Array.isArray(this.settings.strikeDoneStatuses) ? this.settings.strikeDoneStatuses : [],
       });
       const dv = this.getDataviewShim(el, ctx.sourcePath);
       const monthlyBoard = this.loadRenderer();
@@ -2842,6 +2853,17 @@ class MonthlyBoardSettingTab extends PluginSettingTab {
         .setValue(!!this.plugin.settings.strikeDoneItems)
         .onChange(async value => {
           this.plugin.settings.strikeDoneItems = value;
+          await this.plugin.saveSettings();
+        }));
+
+    new Setting(containerEl)
+      .setName(t('setStrikeListName'))
+      .setDesc(t('setStrikeListDesc'))
+      .addText(text => text
+        .setPlaceholder('搞定, 已验收, Archived')
+        .setValue(Array.isArray(this.plugin.settings.strikeDoneStatuses) ? this.plugin.settings.strikeDoneStatuses.join(', ') : '')
+        .onChange(async value => {
+          this.plugin.settings.strikeDoneStatuses = value.split(/[,，]/).map(s => s.trim()).filter(Boolean);
           await this.plugin.saveSettings();
         }));
 
