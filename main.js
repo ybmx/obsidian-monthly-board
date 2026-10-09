@@ -1236,7 +1236,8 @@ function syncZoomViewportBounds(viewport, frameHeight = 0) {
   // 阅读模式或手机：不限高度、不做内部滚动，滚动交给页面本身
   if (viewport.closest?.('.markdown-preview-view.monthly-journal-board') || isMobileView()) {
     viewport.style.maxHeight = 'none';
-    viewport.style.height = frameHeight > 0 ? `${frameHeight}px` : '';
+    // 手机上连高度都不写：frameHeight 可能是在图片/字体没加载完时量的，写小了下面的内容就被裁掉滑不到
+    viewport.style.height = isMobileView() ? '' : (frameHeight > 0 ? `${frameHeight}px` : '');
     if (wrapperEl?.classList?.contains('monthly-journal-board')) {
       wrapperEl.style.maxHeight = 'none';
       wrapperEl.style.height = '';
@@ -1290,6 +1291,7 @@ function applyBoardZoom(canvas, label, frame) {
     const baseWidth = Math.max(1, Math.floor(viewportWidth / uiScale));
     canvas.style.width = `${baseWidth}px`;
     canvas.style.height = '';
+    // 手机上不写死画布/内框高度（测量可能基于未加载完的内容，写死会裁掉下面的部分导致滑不动）
     canvas.style.maxWidth = 'none';
     const root = canvas.firstElementChild;
     // 行高覆盖只在本次确有需要时才重新写入：先无条件清掉再算格子，否则旧高度会一直留在格子上
@@ -1332,7 +1334,7 @@ function applyBoardZoom(canvas, label, frame) {
     if (frame) {
       frame.style.width = `${Math.ceil(baseWidth * effZoom)}px`;
       frameHeight = Math.ceil(baseHeight * effZoom);
-      frame.style.height = `${frameHeight}px`;
+      frame.style.height = isMobileView() ? '' : `${frameHeight}px`;
     }
     syncZoomViewportBounds(viewport, frameHeight);
     // 诊断日志（窗口比例排查用，完事可删）
@@ -1853,15 +1855,23 @@ body.is-mobile .mjb-title { font-size: clamp(34px, 11vw, 56px) !important; }
 /* ── 手机：7 列月网格换成竖向日程列表（每天一行：日期 | 条目 | 照片），纵向滚动 ── */
 body.is-mobile .mjb-weekdays { display: none !important; }
 body.is-mobile .mjb-grid { display: flex !important; flex-direction: column; gap: 6px; }
-body.is-mobile .mjb-day { position: relative; display: flex; align-items: flex-start; gap: 8px; width: 100%; height: auto !important; min-height: 52px !important; padding: 7px 8px; }
+body.is-mobile .mjb-day { position: relative; display: flex; align-items: flex-start; gap: 8px; width: 100%; height: auto !important; min-height: 104px !important; padding: 9px 10px; }
 body.is-mobile .mjb-day.is-empty { display: none; }
 body.is-mobile .mjb-date { position: static; flex: 0 0 auto; margin-top: 1px; }
 body.is-mobile .mjb-week-chip,
 body.is-mobile .mjb-photo-count { display: none; }
-body.is-mobile .mjb-thumb { position: static; order: 3; flex: 0 0 auto; width: 56px; height: 56px; border-radius: 10px; margin-left: auto; }
+body.is-mobile .mjb-thumb { position: static; order: 3; flex: 0 0 auto; width: 92px; height: 92px; border-radius: 12px; margin-left: auto; }
 body.is-mobile .mjb-day.has-image::after { display: none; }
-body.is-mobile .mjb-items { position: static; flex: 1 1 auto; display: flex; flex-direction: column; gap: 2px; }
+body.is-mobile .mjb-items { position: static; flex: 1 1 auto; display: flex; flex-direction: column; gap: 3px; }
 body.is-mobile .mjb-day.has-image .mjb-item { background: linear-gradient(90deg, rgba(255,255,255,.30), rgba(255,255,255,.16)); color: var(--mjb-ink); text-shadow: 0 1px 1px rgba(255,255,255,.42); backdrop-filter: none; }
+/* 手机：点格子弹出的底部详情面板 */
+body.is-mobile .mjb-sheet-backdrop { position: fixed; inset: 0; z-index: 98; background: rgba(15,20,35,.38); opacity: 0; pointer-events: none; transition: opacity .2s; }
+body.is-mobile .mjb-sheet-backdrop.is-open { opacity: 1; pointer-events: auto; }
+body.is-mobile .mjb-sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 99; max-height: 72vh; display: flex; flex-direction: column; background: var(--background-primary, #fff); border-radius: 20px 20px 0 0; box-shadow: 0 -10px 34px rgba(20,30,50,.30); transform: translateY(105%); transition: transform .24s ease; }
+body.is-mobile .mjb-sheet.is-open { transform: translateY(0); }
+body.is-mobile .mjb-sheet-grip { flex: 0 0 auto; height: 30px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+body.is-mobile .mjb-sheet-grip::before { content: ''; width: 44px; height: 5px; border-radius: 99px; background: rgba(120,130,150,.45); }
+body.is-mobile .mjb-sheet-body { overflow: auto; padding: 2px 16px 26px; overscroll-behavior: contain; }
 ${customThemeCss}
 `;
   document.head.appendChild(style);
@@ -2231,6 +2241,28 @@ async function render() {
     if (!markdownNote && fallback) scheduleDayMarkdownNoteSave(dateStr, day?.path, fallback);
   };
 
+  // 手机端：点格子从底部弹出当天详情面板（底部 Notes 栏在页面很下面，滑过去不方便）
+  let sheet = null, sheetBody = null, sheetBack = null;
+  const closeDaySheet = () => { sheet?.classList.remove('is-open'); sheetBack?.classList.remove('is-open'); };
+  const openDaySheet = dateStr => {
+    if (!isMobileView()) return;
+    if (!sheet) {
+      sheetBack = make('div', 'mjb-sheet-backdrop');
+      sheetBack.onclick = closeDaySheet;
+      sheet = make('div', 'mjb-sheet');
+      const grip = make('div', 'mjb-sheet-grip');
+      grip.title = '关闭';
+      grip.onclick = closeDaySheet;
+      sheetBody = make('div', 'mjb-sheet-body');
+      sheetBody.appendChild(make('div', 'mjb-detail'));
+      sheet.append(grip, sheetBody);
+      ROOT.append(sheetBack, sheet);
+    }
+    renderDetail(sheetBody, monthData, dateStr);
+    sheet.classList.add('is-open');
+    sheetBack.classList.add('is-open');
+  };
+
   const root = make('div', 'mjb-root');
   root.dataset.theme = state.theme;
   root.dataset.sideHidden = state.sideHidden ? 'true' : 'false';
@@ -2332,7 +2364,7 @@ async function render() {
       const dateStr = ymd(state.year, state.month, dayNum);
       const info = monthData.get(dateStr);
       const card = make('article', `mjb-day${info?.image ? ' has-image' : ''}${state.selectedDate === dateStr ? ' is-selected' : ''}`);
-      card.onclick = () => { state.selectedDate = dateStr; saveState(state); loadDayNoteIntoArea(dateStr); updateQuickAdd(dateStr); renderDetail(side, monthData, dateStr); grid.querySelectorAll('.mjb-day').forEach(el => el.classList.remove('is-selected')); card.classList.add('is-selected'); };
+      card.onclick = () => { state.selectedDate = dateStr; saveState(state); loadDayNoteIntoArea(dateStr); updateQuickAdd(dateStr); renderDetail(side, monthData, dateStr); grid.querySelectorAll('.mjb-day').forEach(el => el.classList.remove('is-selected')); card.classList.add('is-selected'); openDaySheet(dateStr); };
       card.ondblclick = ev => { if (info?.path) { ev.preventDefault(); ev.stopPropagation(); openNoteLink(info.path, dv.current().file.path); } };
       const dateBadge = make(info?.path ? 'a' : 'div', info?.path ? 'internal-link mjb-date' : 'mjb-date', dayNum);
       if (info?.path) {
