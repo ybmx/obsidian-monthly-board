@@ -1846,7 +1846,7 @@ body.is-mobile .mjb-weekdays { font-size: 9px; }
 body.is-mobile .mjb-item { font-size: 9px; line-height: 1.3; }
 body.is-mobile .mjb-more { font-size: 8px; }
 body.is-mobile .mjb-date { min-width: 17px; height: 17px; font-size: 9px; }
-body.is-mobile .mjb-zoom-viewport { scrollbar-gutter: auto; }
+body.is-mobile .mjb-zoom-viewport { scrollbar-gutter: auto; overflow: visible !important; overscroll-behavior: auto !important; touch-action: pan-x pan-y !important; }
 /* 手机上藏掉顶部控件行（年份/今天/主题/背景）和缩放工具条：太挤且遮挡编辑按钮；切月用月份标签，缩放用双指 */
 body.is-mobile .mjb-controls,
 body.is-mobile .mjb-zoom-toolbar { display: none !important; }
