@@ -109,6 +109,16 @@ Use the Obsidian command palette:
 - When the source entry note or JSON config is modified, deleted, or renamed, the external window attempts to refresh and shows a status message.
 - Closing the external window does not close or modify the original Obsidian note.
 
+## Live glass window (desktop, Windows 11 acrylic)
+
+- Run `Open glass monthly board` to open a borderless floating glass window. It is a real Obsidian popout, so the board inside is fully live: switch months, select days, edit notes; vault changes refresh it automatically.
+- Links clicked inside the glass window open in the main Obsidian window, not in the glass window itself.
+- The board auto-fits the window: square day cells, fixed 6 rows, proportional scaling; resizing the window refits it.
+- The title strip offers: re-render (↻), always-on-top (📌), close (✕). Drag the strip to move the window.
+- `Lock glass window content` (on by default): the glass window always shows the monthly board; if another note is opened inside it, the board is restored.
+- A static snapshot variant remains available as `Open glass monthly board (static snapshot)` and as an automatic fallback if the live window cannot be created. Snapshot images work (Obsidian `app://` URLs are rewritten to `file:///`).
+- Acrylic blur requires Windows 11 22H2+. On older systems the window falls back to a solid light background.
+
 ### External window settings
 
 Open the `Monthly Board` settings tab to adjust:
