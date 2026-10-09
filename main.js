@@ -1850,6 +1850,18 @@ body.is-mobile .mjb-controls,
 body.is-mobile .mjb-zoom-toolbar { display: none !important; }
 body.is-mobile .mjb-head { margin-bottom: 10px; }
 body.is-mobile .mjb-title { font-size: clamp(34px, 11vw, 56px) !important; }
+/* ── 手机：7 列月网格换成竖向日程列表（每天一行：日期 | 条目 | 照片），纵向滚动 ── */
+body.is-mobile .mjb-weekdays { display: none !important; }
+body.is-mobile .mjb-grid { display: flex !important; flex-direction: column; gap: 6px; }
+body.is-mobile .mjb-day { position: relative; display: flex; align-items: flex-start; gap: 8px; width: 100%; height: auto !important; min-height: 52px !important; padding: 7px 8px; }
+body.is-mobile .mjb-day.is-empty { display: none; }
+body.is-mobile .mjb-date { position: static; flex: 0 0 auto; margin-top: 1px; }
+body.is-mobile .mjb-week-chip,
+body.is-mobile .mjb-photo-count { display: none; }
+body.is-mobile .mjb-thumb { position: static; order: 3; flex: 0 0 auto; width: 56px; height: 56px; border-radius: 10px; margin-left: auto; }
+body.is-mobile .mjb-day.has-image::after { display: none; }
+body.is-mobile .mjb-items { position: static; flex: 1 1 auto; display: flex; flex-direction: column; gap: 2px; }
+body.is-mobile .mjb-day.has-image .mjb-item { background: linear-gradient(90deg, rgba(255,255,255,.30), rgba(255,255,255,.16)); color: var(--mjb-ink); text-shadow: 0 1px 1px rgba(255,255,255,.42); backdrop-filter: none; }
 ${customThemeCss}
 `;
   document.head.appendChild(style);
