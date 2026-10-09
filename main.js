@@ -356,9 +356,11 @@ async function renderMonthlyBoard(ctx = {}) {
   ROOT.style.width = '100%';
   ROOT.style.maxWidth = 'none';
   // popout/玻璃窗里不限高：100vh 是弹窗自己的高度，限高会把最后一行裁掉（表现为底部的"虚拟边缘"）
+  // 手机上也不限高不裁切：手机是单列纵向布局，滚动交给页面本身（否则下面的 Notes/详情根本滑不到）
   const inPopoutRoot = !!(ROOT.ownerDocument && typeof document !== 'undefined' && ROOT.ownerDocument !== document);
-  ROOT.style.maxHeight = inPopoutRoot ? 'none' : 'calc(100vh - 92px)';
-  ROOT.style.overflow = 'hidden';
+  const noCap = inPopoutRoot || isMobileView();
+  ROOT.style.maxHeight = noCap ? 'none' : 'calc(100vh - 92px)';
+  ROOT.style.overflow = noCap ? 'visible' : 'hidden';
   const previewSection = ROOT.closest?.('.markdown-preview-section');
   if (previewSection) { previewSection.style.maxWidth = 'none'; previewSection.style.width = '100%'; }
   const previewSizer = ROOT.closest?.('.markdown-preview-sizer');
@@ -1212,10 +1214,12 @@ function stabilizeCalendarGrid(root) {
     if (!Number.isFinite(daySize) || daySize <= 0) return;
     // 行高固定为格子高，且内容顶部对齐：防止窄屏 CSS 的 minmax(100px, auto) 行在容器偏高时被拉伸、行间出现大空白（手机版就是这个现象）
     grid.style.alignContent = 'start';
-    grid.style.gridAutoRows = `${daySize}px`;
+    // 手机上 7 列格子横向已经很挤，行高给 1.25 倍让格子纵向宽松点
+    const cellH = isMobileView() ? Math.round(daySize * 1.25) : daySize;
+    grid.style.gridAutoRows = `${cellH}px`;
     grid.querySelectorAll('.mjb-day').forEach(day => {
-      day.style.height = `${daySize}px`;
-      day.style.minHeight = `${daySize}px`;
+      day.style.height = `${cellH}px`;
+      day.style.minHeight = `${cellH}px`;
     });
   });
   // Notes 栏跟日历等高：日历高时右侧不再留一截空白；内容超出在栏内滚动
@@ -1229,8 +1233,8 @@ function stabilizeCalendarGrid(root) {
 function syncZoomViewportBounds(viewport, frameHeight = 0) {
   if (!viewport) return;
   const wrapperEl = viewport.parentElement;
-  if (viewport.closest?.('.markdown-preview-view.monthly-journal-board')) {
-    // 阅读模式：不限高度、不做内部滚动，滚动交给页面本身
+  // 阅读模式或手机：不限高度、不做内部滚动，滚动交给页面本身
+  if (viewport.closest?.('.markdown-preview-view.monthly-journal-board') || isMobileView()) {
     viewport.style.maxHeight = 'none';
     viewport.style.height = frameHeight > 0 ? `${frameHeight}px` : '';
     if (wrapperEl?.classList?.contains('monthly-journal-board')) {
@@ -1841,6 +1845,11 @@ body.is-mobile .mjb-item { font-size: 9px; line-height: 1.3; }
 body.is-mobile .mjb-more { font-size: 8px; }
 body.is-mobile .mjb-date { min-width: 17px; height: 17px; font-size: 9px; }
 body.is-mobile .mjb-zoom-viewport { scrollbar-gutter: auto; }
+/* 手机上藏掉顶部控件行（年份/今天/主题/背景）和缩放工具条：太挤且遮挡编辑按钮；切月用月份标签，缩放用双指 */
+body.is-mobile .mjb-controls,
+body.is-mobile .mjb-zoom-toolbar { display: none !important; }
+body.is-mobile .mjb-head { margin-bottom: 10px; }
+body.is-mobile .mjb-title { font-size: clamp(34px, 11vw, 56px) !important; }
 ${customThemeCss}
 `;
   document.head.appendChild(style);
