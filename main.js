@@ -1210,6 +1210,8 @@ function stabilizeCalendarGrid(root) {
       ? Math.round(rowOverride)
       : Math.max(42, Math.floor((width - gap * 6) / 7));
     if (!Number.isFinite(daySize) || daySize <= 0) return;
+    // 行高固定为格子高，且内容顶部对齐：防止窄屏 CSS 的 minmax(100px, auto) 行在容器偏高时被拉伸、行间出现大空白（手机版就是这个现象）
+    grid.style.alignContent = 'start';
     grid.style.gridAutoRows = `${daySize}px`;
     grid.querySelectorAll('.mjb-day').forEach(day => {
       day.style.height = `${daySize}px`;
