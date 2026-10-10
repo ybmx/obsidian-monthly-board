@@ -2515,6 +2515,11 @@ async function render() {
   });
   resizer.addEventListener('pointerup', ev => { dragging = false; try { resizer.releasePointerCapture(ev.pointerId); } catch {} });
 
+  if (isMobileView()) {
+    // 手机：不走桌面那套"画布+缩放+固定高度"，内容直接进文档流，滚动就是页面原生滚动
+    ROOT.replaceChildren(root);
+    return;
+  }
   const viewport = make('div', 'mjb-zoom-viewport');
   const toolbar = make('div', 'mjb-zoom-toolbar');
   const frame = make('div', 'mjb-zoom-frame');
