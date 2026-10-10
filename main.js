@@ -1194,6 +1194,39 @@ function obsidianUiScale() {
 function isMobileView() {
   return !!(document.body?.classList?.contains('is-mobile'));
 }
+// 手机端诊断：把滚动链路状态写进 vault 根目录 _mjb-mobile-debug.txt（走 git 同步回电脑排查）
+function mobileDebug(ROOT) {
+  try {
+    const lines = [];
+    const add = s => lines.push(s);
+    add(`time ${new Date().toISOString()}`);
+    add(`ua ${navigator.userAgent}`);
+    add(`win ${window.innerWidth}x${window.innerHeight} dpr ${window.devicePixelRatio}`);
+    add(`body ${document.body.className}`);
+    let el = ROOT, depth = 0;
+    while (el && el !== document.body && depth < 14) {
+      const cs = getComputedStyle(el);
+      add(`${el.tagName}.${String(el.className || '').slice(0, 70)} h=${el.clientHeight}/${el.scrollHeight} oy=${cs.overflowY} ta=${cs.touchAction} pos=${cs.position}`);
+      el = el.parentElement; depth++;
+    }
+    const pv = document.querySelector('.workspace-leaf.mod-active .markdown-preview-view');
+    if (pv) add(`preview-view h=${pv.clientHeight}/${pv.scrollHeight} oy=${getComputedStyle(pv).overflowY} ta=${getComputedStyle(pv).touchAction}`);
+    else add('preview-view NOT FOUND');
+    const scroller = pv || document.scrollingElement;
+    const before = scroller ? scroller.scrollTop : -1;
+    let moves = 0, prevented = 0;
+    const onT = ev => { moves++; if (ev.cancelable && ev.defaultPrevented) prevented++; };
+    ROOT.addEventListener('touchmove', onT, { passive: true });
+    const write = () => app.vault.adapter.write('_mjb-mobile-debug.txt', lines.join('\n')).catch(() => {});
+    write();
+    window.setTimeout(() => {
+      ROOT.removeEventListener('touchmove', onT);
+      const after = scroller ? scroller.scrollTop : -1;
+      add(`scrolltest before=${before} after=${after} touchmoves=${moves} prevented=${prevented}`);
+      write();
+    }, 9000);
+  } catch (e) {}
+}
 function touchDistance(touches) {
   if (!touches || touches.length < 2) return 0;
   const dx = touches[0].clientX - touches[1].clientX;
@@ -2518,6 +2551,7 @@ async function render() {
   if (isMobileView()) {
     // 手机：不走桌面那套"画布+缩放+固定高度"，内容直接进文档流，滚动就是页面原生滚动
     ROOT.replaceChildren(root);
+    mobileDebug(ROOT);
     return;
   }
   const viewport = make('div', 'mjb-zoom-viewport');
