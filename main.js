@@ -1605,6 +1605,8 @@ ${handFontFace}.monthly-journal-board { display: block; max-height: calc(100vh -
 .markdown-preview-view.monthly-journal-board .monthly-journal-board { margin: 0 !important; }
 .markdown-preview-view.monthly-journal-board::-webkit-scrollbar { width: 0 !important; height: 0 !important; background: transparent !important; }
 .markdown-preview-view.monthly-journal-board { scrollbar-width: none !important; }
+/* 月历页的阅读视图必须可滚动：某些主题/片段（尤其手机端）会把它的 overflow 关掉，内容一高就整页卡死 */
+.markdown-preview-view:has(.monthly-journal-board) { overflow-y: auto !important; overscroll-behavior: auto !important; }
 /* ── 编辑模式（实时预览）：月历同样充满整列，不被"可读行宽"挤成窄条 ── */
 .markdown-source-view.monthly-journal-board .cm-contentContainer,
 .markdown-source-view.monthly-journal-board .cm-content,
