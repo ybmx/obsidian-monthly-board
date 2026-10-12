@@ -299,6 +299,30 @@ function getSafeExternalWindowBounds(settings) {
   return { width, height, left, top };
 }
 
+// 移动端布局由插件自己的 body.mjb-phone 类控制（不再直接绑死 Obsidian 的 is-mobile）。
+// 档位按设备本机保存（localStorage），不会随仓库同步串到别的设备：
+// 'auto'（默认：手机/窄屏=竖版列表，平板=桌面网格）| 'desktop'（恒桌面网格）| 'phone'（恒竖版列表）
+// 注意：必须在模块顶层——插件类 onload 和设置页（工厂函数之外）也要调用。
+function getMobileLayoutMode() {
+  try { return window.localStorage?.getItem('mjb-mobile-layout') || 'auto'; } catch (e) { return 'auto'; }
+}
+function applyMobileLayoutMode(mode) {
+  const cls = document.body?.classList;
+  if (!cls) return;
+  if (!cls.contains('is-mobile')) { cls.remove('mjb-phone'); return; } // 桌面端永远不用手机布局
+  const m = mode || getMobileLayoutMode();
+  let phone;
+  if (m === 'phone') phone = true;
+  else if (m === 'desktop') phone = false;
+  else {
+    // auto：Obsidian 判定为手机，或屏幕短边 <600px 就用竖版列表
+    //（部分大屏/折叠手机会被 Obsidian 误判成平板，Platform.isTablet 不可靠，用宽度兜底）
+    const shortSide = Math.min(window.innerWidth || 0, window.innerHeight || 0);
+    phone = !!Platform?.isPhone || (shortSide > 0 && shortSide < 600);
+  }
+  cls.toggle('mjb-phone', phone);
+}
+
 function createMonthlyBoardRenderer() {
   const module = { exports: {} };
   const exports = module.exports;
@@ -1202,28 +1226,6 @@ function obsidianUiScale() {
   const raw = styles.getPropertyValue('--font-ui-medium') || styles.getPropertyValue('--font-text-size') || styles.fontSize || '15px';
   const px = Number.parseFloat(raw);
   return Math.max(0.75, Math.min(1.35, Number.isFinite(px) ? px / 15 : 1));
-}
-// 移动端布局由插件自己的 body.mjb-phone 类控制（不再直接绑死 Obsidian 的 is-mobile）。
-// 档位按设备本机保存（localStorage），不会随仓库同步串到别的设备：
-// 'auto'（默认：手机/窄屏=竖版列表，平板=桌面网格）| 'desktop'（恒桌面网格）| 'phone'（恒竖版列表）
-function getMobileLayoutMode() {
-  try { return window.localStorage?.getItem('mjb-mobile-layout') || 'auto'; } catch (e) { return 'auto'; }
-}
-function applyMobileLayoutMode(mode) {
-  const cls = document.body?.classList;
-  if (!cls) return;
-  if (!cls.contains('is-mobile')) { cls.remove('mjb-phone'); return; } // 桌面端永远不用手机布局
-  const m = mode || getMobileLayoutMode();
-  let phone;
-  if (m === 'phone') phone = true;
-  else if (m === 'desktop') phone = false;
-  else {
-    // auto：Obsidian 判定为手机，或屏幕短边 <600px 就用竖版列表
-    //（部分大屏/折叠手机会被 Obsidian 误判成平板，Platform.isTablet 不可靠，用宽度兜底）
-    const shortSide = Math.min(window.innerWidth || 0, window.innerHeight || 0);
-    phone = !!Platform?.isPhone || (shortSide > 0 && shortSide < 600);
-  }
-  cls.toggle('mjb-phone', phone);
 }
 function isMobileView() {
   return !!(document.body?.classList?.contains('mjb-phone'));
