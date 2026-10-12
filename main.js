@@ -1,4 +1,4 @@
-const { MarkdownView, Notice, Plugin, PluginSettingTab, Setting, normalizePath } = require('obsidian');
+const { MarkdownView, Notice, Platform, Plugin, PluginSettingTab, Setting, normalizePath } = require('obsidian');
 
 // CSS injected only into the popout window's document, never the main Obsidian
 // window. Hides Obsidian's tab bar / view header / breadcrumbs, kills the H1
@@ -109,6 +109,11 @@ const MB_I18N = {
     setStrikeDoneDesc: 'Items whose status is done are shown struck-through and grayed out in day cells and the detail panel. Off by default.',
     setStrikeListName: 'Extra status names treated as done',
     setStrikeListDesc: 'Comma-separated. Exact match on the status property value; built-in rules (完成/done/complete…) always apply too. Leave empty to use built-in only.',
+    setMobileLayoutName: 'Mobile layout',
+    setMobileLayoutDesc: 'Which layout the board uses in Obsidian Mobile. Saved per device, does not sync. Auto = vertical day list on phones/narrow screens, desktop month grid on tablets (iPad); the other two options force one layout on this device.',
+    optLayoutAuto: 'Auto (follow device)',
+    optLayoutDesktop: 'Desktop grid',
+    optLayoutPhone: 'Phone list',
     srcSecHeading: 'Related entry sources',
     srcSecDesc: 'Controls where "related entries" are read from and how they are grouped. Card order = group display order on the board (drag the ⋮⋮ handle to reorder). Editing here saves a settings override that takes precedence over the JSON config file.',
     srcDragHint: 'Drag to reorder (order = group display order)',
@@ -196,6 +201,11 @@ const MB_I18N = {
     setStrikeDoneDesc: '状态为「完成」的条目在日期格子和右侧详情里显示为删除线+变灰。默认关闭。',
     setStrikeListName: '额外算作「完成」的状态名',
     setStrikeListDesc: '逗号分隔，精确匹配条目的状态属性值；内置规则（完成/已完成/done/complete）始终生效。留空=只用内置规则。',
+    setMobileLayoutName: '移动端布局',
+    setMobileLayoutDesc: '手机/平板（Obsidian 移动端）上看板用哪种布局，按设备本机保存、不影响其他设备。自动=手机或窄屏用竖向日程列表、平板（iPad）用桌面网格；另外两个选项可在本机强制锁定一种。',
+    optLayoutAuto: '自动（跟随设备）',
+    optLayoutDesktop: '桌面网格',
+    optLayoutPhone: '手机列表',
     srcSecHeading: '关联条目来源',
     srcSecDesc: '决定「关联条目」从哪些笔记读取、如何分组。卡片顺序 = 看板上分组的显示顺序（拖 ⋮⋮ 手柄调整）。在这里编辑会保存为设置覆盖，优先于 JSON 配置文件。',
     srcDragHint: '拖拽调整顺序（顺序即分组显示顺序）',
@@ -341,6 +351,8 @@ async function renderMonthlyBoard(ctx = {}) {
   if (!dv || !app) throw new Error('MonthlyBoard requires { dv, app }.');
   const ROOT = ctx.container || dv.container;
   ROOT.classList?.add('monthly-journal-board');
+  // 先落定移动端布局档位（auto/desktop/phone，按设备本机保存），后面的 isMobileView() 和 CSS 都以它为准
+  applyMobileLayoutMode();
   if (typeof window !== 'undefined' && !ROOT.dataset.mjbGotoBound) {
     ROOT.dataset.mjbGotoBound = '1';
     window.addEventListener('mjb-calendar-goto', ev => {
@@ -1191,8 +1203,30 @@ function obsidianUiScale() {
   const px = Number.parseFloat(raw);
   return Math.max(0.75, Math.min(1.35, Number.isFinite(px) ? px / 15 : 1));
 }
+// 移动端布局由插件自己的 body.mjb-phone 类控制（不再直接绑死 Obsidian 的 is-mobile）。
+// 档位按设备本机保存（localStorage），不会随仓库同步串到别的设备：
+// 'auto'（默认：手机/窄屏=竖版列表，平板=桌面网格）| 'desktop'（恒桌面网格）| 'phone'（恒竖版列表）
+function getMobileLayoutMode() {
+  try { return window.localStorage?.getItem('mjb-mobile-layout') || 'auto'; } catch (e) { return 'auto'; }
+}
+function applyMobileLayoutMode(mode) {
+  const cls = document.body?.classList;
+  if (!cls) return;
+  if (!cls.contains('is-mobile')) { cls.remove('mjb-phone'); return; } // 桌面端永远不用手机布局
+  const m = mode || getMobileLayoutMode();
+  let phone;
+  if (m === 'phone') phone = true;
+  else if (m === 'desktop') phone = false;
+  else {
+    // auto：Obsidian 判定为手机，或屏幕短边 <600px 就用竖版列表
+    //（部分大屏/折叠手机会被 Obsidian 误判成平板，Platform.isTablet 不可靠，用宽度兜底）
+    const shortSide = Math.min(window.innerWidth || 0, window.innerHeight || 0);
+    phone = !!Platform?.isPhone || (shortSide > 0 && shortSide < 600);
+  }
+  cls.toggle('mjb-phone', phone);
+}
 function isMobileView() {
-  return !!(document.body?.classList?.contains('is-mobile'));
+  return !!(document.body?.classList?.contains('mjb-phone'));
 }
 function touchDistance(touches) {
   if (!touches || touches.length < 2) return 0;
@@ -1838,42 +1872,42 @@ p.mjb-clamp.is-expanded { display: block; -webkit-line-clamp: unset; overflow: v
 @container mjb-board (max-width: 920px) { .mjb-main, .mjb-root[data-side-hidden="true"] .mjb-main { grid-template-columns: 1fr; } .mjb-resizer { display:none; } .mjb-side { position: static; height: auto; max-height: none; overflow: visible; } .mjb-detail { overflow: visible; flex: 0 0 auto; max-height: none; } .mjb-side.is-collapsed { width: auto; min-height: 44px; align-items: stretch; } .mjb-side.is-collapsed .mjb-side-head { writing-mode: horizontal-tb; } .mjb-grid { grid-auto-rows: minmax(100px, auto); } }
 @media (max-width: 920px) { .mjb-main, .mjb-root[data-side-hidden="true"] .mjb-main { grid-template-columns: 1fr; } .mjb-resizer { display:none; } .mjb-side { position: static; height: auto; max-height: none; overflow: visible; } .mjb-detail { overflow: visible; flex: 0 0 auto; max-height: none; } .mjb-side.is-collapsed { width: auto; min-height: 44px; align-items: stretch; } .mjb-side.is-collapsed .mjb-side-head { writing-mode: horizontal-tb; } .mjb-grid { grid-auto-rows: minmax(100px, auto); } }
 /* ── 手机端：全屏出血 + 排版补偿 ── */
-body.is-mobile .markdown-preview-view.monthly-journal-board .inline-title { display: none; }
-body.is-mobile .markdown-preview-view.monthly-journal-board .markdown-preview-sizer,
-body.is-mobile .markdown-preview-view.monthly-journal-board .markdown-preview-section { width: 100% !important; max-width: 100% !important; padding-left: 0 !important; padding-right: 0 !important; margin-left: 0 !important; margin-right: 0 !important; }
-body.is-mobile .monthly-journal-board { max-height: none !important; }
-body.is-mobile .mjb-root { padding: 8px; border-radius: 0; box-shadow: none; min-height: 0; }
-body.is-mobile .mjb-head { gap: 8px; margin-bottom: 10px; }
-body.is-mobile .mjb-weekdays { font-size: 9px; }
-body.is-mobile .mjb-item { font-size: 9px; line-height: 1.3; }
-body.is-mobile .mjb-more { font-size: 8px; }
-body.is-mobile .mjb-date { min-width: 17px; height: 17px; font-size: 9px; }
-body.is-mobile .mjb-zoom-viewport { scrollbar-gutter: auto; overflow: visible !important; overscroll-behavior: auto !important; touch-action: pan-x pan-y !important; }
+body.mjb-phone .markdown-preview-view.monthly-journal-board .inline-title { display: none; }
+body.mjb-phone .markdown-preview-view.monthly-journal-board .markdown-preview-sizer,
+body.mjb-phone .markdown-preview-view.monthly-journal-board .markdown-preview-section { width: 100% !important; max-width: 100% !important; padding-left: 0 !important; padding-right: 0 !important; margin-left: 0 !important; margin-right: 0 !important; }
+body.mjb-phone .monthly-journal-board { max-height: none !important; }
+body.mjb-phone .mjb-root { padding: 8px; border-radius: 0; box-shadow: none; min-height: 0; }
+body.mjb-phone .mjb-head { gap: 8px; margin-bottom: 10px; }
+body.mjb-phone .mjb-weekdays { font-size: 9px; }
+body.mjb-phone .mjb-item { font-size: 9px; line-height: 1.3; }
+body.mjb-phone .mjb-more { font-size: 8px; }
+body.mjb-phone .mjb-date { min-width: 17px; height: 17px; font-size: 9px; }
+body.mjb-phone .mjb-zoom-viewport { scrollbar-gutter: auto; overflow: visible !important; overscroll-behavior: auto !important; touch-action: pan-x pan-y !important; }
 /* 手机上藏掉顶部控件行（年份/今天/主题/背景）和缩放工具条：太挤且遮挡编辑按钮；切月用月份标签，缩放用双指 */
-body.is-mobile .mjb-controls,
-body.is-mobile .mjb-zoom-toolbar { display: none !important; }
-body.is-mobile .mjb-head { margin-bottom: 10px; }
-body.is-mobile .mjb-title { font-size: clamp(34px, 11vw, 56px) !important; }
+body.mjb-phone .mjb-controls,
+body.mjb-phone .mjb-zoom-toolbar { display: none !important; }
+body.mjb-phone .mjb-head { margin-bottom: 10px; }
+body.mjb-phone .mjb-title { font-size: clamp(34px, 11vw, 56px) !important; }
 /* ── 手机：7 列月网格换成竖向日程列表（每天一行：日期 | 条目 | 照片），纵向滚动 ── */
-body.is-mobile .mjb-weekdays { display: none !important; }
-body.is-mobile .mjb-grid { display: flex !important; flex-direction: column; gap: 6px; }
-body.is-mobile .mjb-day { position: relative; display: flex; align-items: flex-start; gap: 8px; width: 100%; height: auto !important; min-height: 104px !important; padding: 9px 10px; }
-body.is-mobile .mjb-day.is-empty { display: none; }
-body.is-mobile .mjb-date { position: static; flex: 0 0 auto; margin-top: 1px; }
-body.is-mobile .mjb-week-chip,
-body.is-mobile .mjb-photo-count { display: none; }
-body.is-mobile .mjb-thumb { position: static; order: 3; flex: 0 0 auto; width: 92px; height: 92px; border-radius: 12px; margin-left: auto; }
-body.is-mobile .mjb-day.has-image::after { display: none; }
-body.is-mobile .mjb-items { position: static; flex: 1 1 auto; display: flex; flex-direction: column; gap: 3px; }
-body.is-mobile .mjb-day.has-image .mjb-item { background: linear-gradient(90deg, rgba(255,255,255,.30), rgba(255,255,255,.16)); color: var(--mjb-ink); text-shadow: 0 1px 1px rgba(255,255,255,.42); backdrop-filter: none; }
+body.mjb-phone .mjb-weekdays { display: none !important; }
+body.mjb-phone .mjb-grid { display: flex !important; flex-direction: column; gap: 6px; }
+body.mjb-phone .mjb-day { position: relative; display: flex; align-items: flex-start; gap: 8px; width: 100%; height: auto !important; min-height: 104px !important; padding: 9px 10px; }
+body.mjb-phone .mjb-day.is-empty { display: none; }
+body.mjb-phone .mjb-date { position: static; flex: 0 0 auto; margin-top: 1px; }
+body.mjb-phone .mjb-week-chip,
+body.mjb-phone .mjb-photo-count { display: none; }
+body.mjb-phone .mjb-thumb { position: static; order: 3; flex: 0 0 auto; width: 92px; height: 92px; border-radius: 12px; margin-left: auto; }
+body.mjb-phone .mjb-day.has-image::after { display: none; }
+body.mjb-phone .mjb-items { position: static; flex: 1 1 auto; display: flex; flex-direction: column; gap: 3px; }
+body.mjb-phone .mjb-day.has-image .mjb-item { background: linear-gradient(90deg, rgba(255,255,255,.30), rgba(255,255,255,.16)); color: var(--mjb-ink); text-shadow: 0 1px 1px rgba(255,255,255,.42); backdrop-filter: none; }
 /* 手机：点格子弹出的底部详情面板 */
-body.is-mobile .mjb-sheet-backdrop { position: fixed; inset: 0; z-index: 98; background: rgba(15,20,35,.38); opacity: 0; pointer-events: none; transition: opacity .2s; }
-body.is-mobile .mjb-sheet-backdrop.is-open { opacity: 1; pointer-events: auto; }
-body.is-mobile .mjb-sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 99; max-height: 72vh; display: flex; flex-direction: column; background: var(--background-primary, #fff); border-radius: 20px 20px 0 0; box-shadow: 0 -10px 34px rgba(20,30,50,.30); transform: translateY(105%); transition: transform .24s ease; }
-body.is-mobile .mjb-sheet.is-open { transform: translateY(0); }
-body.is-mobile .mjb-sheet-grip { flex: 0 0 auto; height: 30px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
-body.is-mobile .mjb-sheet-grip::before { content: ''; width: 44px; height: 5px; border-radius: 99px; background: rgba(120,130,150,.45); }
-body.is-mobile .mjb-sheet-body { overflow: auto; padding: 2px 16px 26px; overscroll-behavior: contain; }
+body.mjb-phone .mjb-sheet-backdrop { position: fixed; inset: 0; z-index: 98; background: rgba(15,20,35,.38); opacity: 0; pointer-events: none; transition: opacity .2s; }
+body.mjb-phone .mjb-sheet-backdrop.is-open { opacity: 1; pointer-events: auto; }
+body.mjb-phone .mjb-sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 99; max-height: 72vh; display: flex; flex-direction: column; background: var(--background-primary, #fff); border-radius: 20px 20px 0 0; box-shadow: 0 -10px 34px rgba(20,30,50,.30); transform: translateY(105%); transition: transform .24s ease; }
+body.mjb-phone .mjb-sheet.is-open { transform: translateY(0); }
+body.mjb-phone .mjb-sheet-grip { flex: 0 0 auto; height: 30px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+body.mjb-phone .mjb-sheet-grip::before { content: ''; width: 44px; height: 5px; border-radius: 99px; background: rgba(120,130,150,.45); }
+body.mjb-phone .mjb-sheet-body { overflow: auto; padding: 2px 16px 26px; overscroll-behavior: contain; }
 ${customThemeCss}
 `;
   document.head.appendChild(style);
@@ -2749,6 +2783,7 @@ module.exports = class MonthlyBoardPlugin extends Plugin {
   async onload() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
     this.settings.externalWindow = normalizeExternalWindowSettings(this.settings.externalWindow);
+    applyMobileLayoutMode();
 
     this.registerMarkdownCodeBlockProcessor('monthly-board', async (source, el, ctx) => {
       await this.renderBoard(source, el, ctx);
@@ -3986,6 +4021,23 @@ class MonthlyBoardSettingTab extends PluginSettingTab {
         .onChange(async value => {
           this.plugin.settings.strikeDoneStatuses = value.split(/[,，]/).map(s => s.trim()).filter(Boolean);
           await this.plugin.saveSettings();
+          this.plugin.refreshAllBoards();
+        }));
+
+    new Setting(containerEl)
+      .setName(t('setMobileLayoutName'))
+      .setDesc(t('setMobileLayoutDesc'))
+      .addDropdown(drop => drop
+        .addOption('auto', t('optLayoutAuto'))
+        .addOption('desktop', t('optLayoutDesktop'))
+        .addOption('phone', t('optLayoutPhone'))
+        .setValue(getMobileLayoutMode())
+        .onChange(value => {
+          try {
+            if (value === 'auto') window.localStorage?.removeItem('mjb-mobile-layout');
+            else window.localStorage?.setItem('mjb-mobile-layout', value);
+          } catch (e) {}
+          applyMobileLayoutMode(value);
           this.plugin.refreshAllBoards();
         }));
 
