@@ -322,6 +322,12 @@ function applyMobileLayoutMode(mode) {
   }
   cls.toggle('mjb-phone', phone);
 }
+// 是否在 Obsidian 移动端 App（不管选了网格还是列表布局）。
+// 移动端 App 一律走文档流渲染（原生滚动、撑满屏宽），不走桌面的缩放画布管线——
+// 否则 iPad 选桌面网格时画布尺寸是按桌面窗口算的，会缩成角落里一小块。
+function isMobileAppView() {
+  return !!(document.body?.classList?.contains('is-mobile'));
+}
 
 function createMonthlyBoardRenderer() {
   const module = { exports: {} };
@@ -394,7 +400,7 @@ async function renderMonthlyBoard(ctx = {}) {
   // popout/玻璃窗里不限高：100vh 是弹窗自己的高度，限高会把最后一行裁掉（表现为底部的"虚拟边缘"）
   // 手机上也不限高不裁切：手机是单列纵向布局，滚动交给页面本身（否则下面的 Notes/详情根本滑不到）
   const inPopoutRoot = !!(ROOT.ownerDocument && typeof document !== 'undefined' && ROOT.ownerDocument !== document);
-  const noCap = inPopoutRoot || isMobileView();
+  const noCap = inPopoutRoot || isMobileView() || isMobileAppView();
   ROOT.style.maxHeight = noCap ? 'none' : 'calc(100vh - 92px)';
   ROOT.style.overflow = noCap ? 'visible' : 'hidden';
   const previewSection = ROOT.closest?.('.markdown-preview-section');
@@ -2553,8 +2559,9 @@ async function render() {
   });
   resizer.addEventListener('pointerup', ev => { dragging = false; try { resizer.releasePointerCapture(ev.pointerId); } catch {} });
 
-  if (isMobileView()) {
-    // 手机：不走桌面那套"画布+缩放+固定高度"，内容直接进文档流，滚动就是页面原生滚动
+  if (isMobileView() || isMobileAppView()) {
+    // 移动端 App（手机列表或 iPad 桌面网格都一样）：不走桌面那套"画布+缩放+固定高度"，
+    // 内容直接进文档流，滚动就是页面原生滚动，宽度撑满屏幕
     ROOT.replaceChildren(root);
     return;
   }
